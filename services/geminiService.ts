@@ -1,29 +1,36 @@
 
 import { GoogleGenAI } from "@google/genai";
 
+const getSafeApiKey = () => {
+  try {
+    return (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const getGoldMarketInsight = async (currentGramPrice: number) => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = getSafeApiKey();
   
   if (!apiKey || apiKey === "undefined") {
-    console.warn("API_KEY no configurada. El análisis de IA estará desactivado.");
-    return "El oro sigue siendo una de las reservas más estables históricamente. Conecta tu API Key para análisis detallados.";
+    console.warn("API_KEY no detectada.");
+    return "El oro es el refugio seguro por excelencia. GLDC te permite poseer oro físico con la liquidez de un token digital.";
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Analiza brevemente el mercado del oro actual considerando que el precio por gramo es de $${currentGramPrice.toFixed(2)}. Explica por qué el token GLDC (Cryptocagua Gold) es una buena reserva de valor frente a la inflación. Responde en español y de forma profesional para un inversionista.`,
+      contents: `Analiza brevemente el mercado del oro actual. Precio actual: $${currentGramPrice.toFixed(2)}/gramo. Explica por qué el token GLDC es ideal contra la inflación. Responde en español, máximo 3 líneas.`,
       config: {
         temperature: 0.7,
-        maxOutputTokens: 500,
-        thinkingConfig: { thinkingBudget: 100 },
+        maxOutputTokens: 200,
       }
     });
 
-    return response.text || "Análisis no disponible en este momento.";
+    return response.text || "Análisis de mercado estable para el oro.";
   } catch (error) {
-    console.error("Error fetching Gemini insights:", error);
-    return "No se pudo obtener el análisis en este momento. El oro sigue siendo una de las reservas más estables históricamente.";
+    console.error("Gemini Error:", error);
+    return "El oro mantiene su valor histórico. Una inversión sólida para tu portafolio digital.";
   }
 };
