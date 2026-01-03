@@ -14,7 +14,9 @@ import {
   X,
   Loader2,
   ArrowRight,
-  History
+  History,
+  Wallet,
+  ArrowDownLeft
 } from 'lucide-react';
 
 const generateMockHistory = (basePrice: number): PricePoint[] => {
@@ -31,7 +33,6 @@ const generateMockHistory = (basePrice: number): PricePoint[] => {
 };
 
 const App: React.FC = () => {
-  // Acceso directo a process.env (asumiendo que el shim en index.html está activo)
   const env = (window as any).process?.env || {};
   const ADMIN_USDT_WALLET = env.ADMIN_USDT_WALLET || "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
   const ADMIN_EMAIL = env.ADMIN_EMAIL || "soporte@cryptocagua.com";
@@ -58,7 +59,9 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showSellModal, setShowSellModal] = useState(false);
   const [txHash, setTxHash] = useState('');
+  const [payoutAddress, setPayoutAddress] = useState('');
   const [isCopied, setIsCopied] = useState(false);
 
   const lastValidPrice = useRef<number>(2350 / TROY_OUNCE_TO_GRAMS);
@@ -88,7 +91,6 @@ const App: React.FC = () => {
       setInsight(aiInsight);
     } catch (e) {
       console.error("Error al sincronizar datos:", e);
-      // Mantener datos de fallback
       setHistory(generateMockHistory(lastValidPrice.current));
     } finally {
       setIsRefreshing(false);
@@ -123,11 +125,10 @@ const App: React.FC = () => {
         console.error("Conexión de wallet fallida", e);
       }
     } else {
-      // Demo mode
       setWallet({ 
         address: '0x71C...Demo', 
-        balanceGLDC: 2.5, 
-        balanceUSD: 2.5 * lastValidPrice.current, 
+        balanceGLDC: 5.25, 
+        balanceUSD: 5.25 * lastValidPrice.current, 
         isConnected: true 
       });
     }
@@ -143,11 +144,11 @@ const App: React.FC = () => {
     if (orderType === 'BUY') {
       setShowPaymentModal(true);
     } else {
-      executeTransaction('VENTA_DIRECTA');
+      setShowSellModal(true);
     }
   };
 
-  const executeTransaction = (hash: string) => {
+  const executeTransaction = (info: string) => {
     const { grams, total } = orderDetails;
     const newId = `TX-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
     const newTx: Transaction = { 
@@ -163,15 +164,21 @@ const App: React.FC = () => {
     
     setTransactions(prev => [newTx, ...prev]);
     setShowPaymentModal(false);
+    setShowSellModal(false);
     setOrderAmount('');
 
-    if (orderType === 'BUY') {
-      const subject = `ORDEN DE COMPRA GLDC: ${newId}`;
-      const body = `REPORTE DE PAGO GLDC\n\nID ORDEN: ${newId}\nTXID/HASH: ${hash}\nCANTIDAD: ${grams}g de Oro\nTOTAL USDT: $${total.toFixed(2)}\nBILLETERA USUARIO: ${wallet.address || 'No detectada'}\n\nPor favor validar transferencia y liberar tokens.`;
-      
-      const mailtoLink = `mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      window.open(mailtoLink, '_blank');
-    }
+    // Preparar el correo
+    const subject = `${orderType === 'BUY' ? 'ORDEN DE COMPRA' : 'SOLICITUD DE VENTA'} GLDC: ${newId}`;
+    const body = orderType === 'BUY' 
+      ? `REPORTE DE PAGO GLDC\n\nID ORDEN: ${newId}\nTXID/HASH: ${info}\nCANTIDAD: ${grams}g de Oro (GLDC)\nTOTAL PAGADO: $${total.toFixed(2)} USDT\nBILLETERA USUARIO: ${wallet.address || 'No detectada'}\n\nPor favor validar transferencia y liberar tokens.`
+      : `SOLICITUD DE LIQUIDACIÓN GLDC\n\nID SOLICITUD: ${newId}\nCANTIDAD A VENDER: ${grams}g de Oro (GLDC)\nPRECIO SPOT: $${orderDetails.price.toFixed(2)}\nTOTAL A RECIBIR: $${total.toFixed(2)} USDT\n\nBILLETERA DE PAGO DEL USUARIO (DONDE ENVIAR USDT): ${info}\nBILLETERA ORIGEN GLDC: ${wallet.address || 'No detectada'}\n\nPor favor contactar al usuario para procesar el retiro.`;
+    
+    const mailtoLink = `mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailtoLink, '_blank');
+
+    // Resetear campos
+    setTxHash('');
+    setPayoutAddress('');
 
     setTimeout(() => {
       setTransactions(prev => prev.map(tx => tx.id === newId ? { ...tx, status: 'COMPLETED' } : tx));
@@ -180,7 +187,7 @@ const App: React.FC = () => {
         balanceGLDC: orderType === 'BUY' ? prev.balanceGLDC + grams : prev.balanceGLDC - grams,
         balanceUSD: (orderType === 'BUY' ? prev.balanceGLDC + grams : prev.balanceGLDC - grams) * lastValidPrice.current
       }));
-    }, 2000);
+    }, 5000);
   };
 
   if (isLoading) {
@@ -218,10 +225,11 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 py-12 grid grid-cols-1 lg:grid-cols-12 gap-12">
         <div className="lg:col-span-8 space-y-12">
+          {/* Stats Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
             <div className="glass-card p-8 rounded-[2.5rem] border-white/5 group hover:border-[#d4af37]/20 transition-all duration-500">
               <p className="text-[11px] font-black text-white/30 uppercase mb-3 tracking-[0.2em]">Precio Spot / Oz</p>
-              <h3 className="text-4xl font-black tabular-nums">${goldPrice.paxgPrice.toLocaleString()}</h3>
+              <h3 className="text-4xl font-black tabular-nums text-white">${goldPrice.paxgPrice.toLocaleString()}</h3>
               <div className="mt-4 flex items-center gap-2 text-[9px] font-bold text-green-500/50 uppercase">
                 <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
                 Mercado Abierto
@@ -265,19 +273,22 @@ const App: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-12">
-          <div className="glass-card p-12 rounded-[3.5rem] gold-gradient text-black shadow-[0_30px_60px_rgba(212,175,55,0.15)] relative overflow-hidden group">
+          {/* Main Balance Card - Fixed Visibility */}
+          <div className="glass-card p-12 rounded-[3.5rem] gold-gradient shadow-[0_30px_60px_rgba(212,175,55,0.15)] relative overflow-hidden group">
             <div className="relative z-10">
-              <p className="text-[12px] font-black uppercase opacity-40 tracking-[0.2em] mb-3">Balance Consolidado</p>
-              <h2 className="text-6xl font-black font-serif tracking-tighter">${wallet.balanceUSD.toLocaleString(undefined, {minimumFractionDigits:2})}</h2>
+              <p className="text-[12px] font-black uppercase text-black/40 tracking-[0.2em] mb-3">Balance Consolidado</p>
+              <h2 className="text-6xl font-black font-serif tracking-tighter text-black tabular-nums">
+                ${wallet.balanceUSD.toLocaleString(undefined, {minimumFractionDigits:2})}
+              </h2>
               <div className="mt-10 pt-10 border-t border-black/10 flex justify-between items-end">
                 <div>
-                  <p className="text-[11px] font-black opacity-40 uppercase tracking-widest">Reservas de Oro</p>
-                  <p className="text-3xl font-black tracking-tight">{wallet.balanceGLDC.toFixed(2)} g</p>
+                  <p className="text-[11px] font-black text-black/40 uppercase tracking-widest">Reservas de Oro</p>
+                  <p className="text-3xl font-black tracking-tight text-black">{wallet.balanceGLDC.toFixed(2)} g</p>
                 </div>
-                <div className="text-[10px] font-black bg-black/20 px-4 py-2 rounded-full border border-black/5 backdrop-blur-md">RE: POLYGON</div>
+                <div className="text-[10px] font-black bg-black/10 px-4 py-2 rounded-full border border-black/5 text-black">POLYGON</div>
               </div>
             </div>
-            <div className="absolute -bottom-16 -right-16 opacity-[0.07] group-hover:scale-110 transition-transform duration-1000">
+            <div className="absolute -bottom-16 -right-16 opacity-[0.05] text-black group-hover:scale-110 transition-transform duration-1000 pointer-events-none">
               <Coins size={220} />
             </div>
           </div>
@@ -296,7 +307,7 @@ const App: React.FC = () => {
                     type="number" 
                     value={orderAmount} 
                     onChange={(e) => setOrderAmount(e.target.value)} 
-                    className="w-full bg-white/5 border border-white/10 rounded-[2.5rem] py-7 px-10 text-4xl font-black focus:outline-none focus:border-[#d4af37] transition-all text-center placeholder:text-white/5" 
+                    className="w-full bg-white/5 border border-white/10 rounded-[2.5rem] py-7 px-10 text-4xl font-black focus:outline-none focus:border-[#d4af37] transition-all text-center placeholder:text-white/5 text-white" 
                     placeholder="0.00"
                   />
                   <div className="absolute right-8 top-1/2 -translate-y-1/2 text-white/10 font-black text-xl">GR</div>
@@ -314,8 +325,10 @@ const App: React.FC = () => {
                     <span>${orderDetails.fee.toFixed(2)}</span>
                   </div>
                   <div className="pt-5 border-t border-white/10 flex justify-between items-center">
-                    <span className="text-xs font-black uppercase text-[#d4af37] tracking-[0.2em]">Total Final</span>
-                    <span className="text-3xl font-black tabular-nums">${orderDetails.total.toFixed(2)}</span>
+                    <span className="text-xs font-black uppercase text-[#d4af37] tracking-[0.2em]">
+                      {orderType === 'BUY' ? 'Total Final' : 'Recibirás'}
+                    </span>
+                    <span className="text-3xl font-black tabular-nums text-white">${orderDetails.total.toFixed(2)}</span>
                   </div>
                 </div>
               )}
@@ -323,9 +336,9 @@ const App: React.FC = () => {
               <button 
                 onClick={handleStartTransaction}
                 disabled={!wallet.isConnected || orderDetails.grams <= 0}
-                className={`w-full py-7 rounded-[2.5rem] font-black uppercase text-xs tracking-[0.4em] transition-all active:scale-95 flex items-center justify-center gap-4 shadow-2xl ${wallet.isConnected && orderDetails.grams > 0 ? 'gold-gradient text-black shadow-[#d4af37]/20' : 'bg-white/5 text-white/10 cursor-not-allowed opacity-50'}`}
+                className={`w-full py-7 rounded-[2.5rem] font-black uppercase text-xs tracking-[0.4em] transition-all active:scale-95 flex items-center justify-center gap-4 shadow-2xl ${wallet.isConnected && orderDetails.grams > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black' : 'bg-white text-black') : 'bg-white/5 text-white/10 cursor-not-allowed opacity-50'}`}
               >
-                {orderType === 'BUY' ? 'Generar Orden' : 'Confirmar Venta'}
+                {orderType === 'BUY' ? 'Generar Orden de Compra' : 'Solicitar Liquidación'}
                 <ArrowRight size={18} />
               </button>
             </div>
@@ -345,14 +358,14 @@ const App: React.FC = () => {
                 transactions.map(tx => (
                   <div key={tx.id} className="flex justify-between items-center p-6 rounded-[2rem] bg-white/5 border border-white/5 hover:border-white/10 transition-all group">
                     <div className="space-y-2">
-                      <p className={`text-[10px] font-black uppercase tracking-widest ${tx.type === 'BUY' ? 'text-[#d4af37]' : 'text-white/30'}`}>{tx.type === 'BUY' ? 'Compra' : 'Venta'}</p>
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${tx.type === 'BUY' ? 'text-[#d4af37]' : 'text-white'}`}>{tx.type === 'BUY' ? 'Compra' : 'Venta'}</p>
                       <p className="text-[10px] text-white/10 font-mono tracking-tighter group-hover:text-white/20 transition-colors">{tx.id}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-black tracking-tight">{tx.amountGLDC} g</p>
+                      <p className="text-lg font-black tracking-tight text-white">{tx.amountGLDC} g</p>
                       <div className="flex items-center justify-end gap-2 mt-1">
                         <div className={`w-2 h-2 rounded-full ${tx.status === 'COMPLETED' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]' : 'bg-orange-500 animate-pulse'}`}></div>
-                        <p className="text-[9px] font-black uppercase opacity-40 tracking-widest">{tx.status}</p>
+                        <p className="text-[9px] font-black uppercase opacity-40 tracking-widest text-white">{tx.status}</p>
                       </div>
                     </div>
                   </div>
@@ -363,18 +376,19 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      {/* MODAL COMPRA */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-3xl">
           <div className="absolute inset-0 bg-black/95" onClick={() => setShowPaymentModal(false)}></div>
-          <div className="relative w-full max-w-lg glass-card border-[#d4af37]/40 p-12 rounded-[4rem] animate-fade-in">
+          <div className="relative w-full max-w-lg glass-card border-[#d4af37]/40 p-12 rounded-[4rem] animate-fade-in shadow-[0_0_100px_rgba(212,175,55,0.1)]">
             <button onClick={() => setShowPaymentModal(false)} className="absolute top-10 right-10 text-white/20 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full"><X size={28}/></button>
             
             <div className="text-center mb-12">
-              <div className="w-24 h-24 bg-[#d4af37]/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-[#d4af37]/20 shadow-[inset_0_0_30px_rgba(212,175,55,0.1)]">
-                <Mail className="text-[#d4af37]" size={40} />
+              <div className="w-24 h-24 bg-[#d4af37]/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-[#d4af37]/20">
+                <ArrowDownLeft className="text-[#d4af37]" size={40} />
               </div>
               <h3 className="text-3xl font-black mb-4 tracking-tight">Liquidación USDT</h3>
-              <p className="text-[11px] text-white/30 uppercase tracking-[0.3em] px-12 leading-loose">Ejecuta la transferencia USDT y registra el hash para la liberación del colateral.</p>
+              <p className="text-[11px] text-white/30 uppercase tracking-[0.3em] px-12 leading-loose">Transfiere el monto exacto y reporta el hash para la liberación del oro.</p>
             </div>
 
             <div className="space-y-10">
@@ -388,8 +402,8 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-8 bg-[#d4af37]/5 rounded-[2.5rem] border border-[#d4af37]/30 flex justify-between items-center shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
-                <span className="text-xs font-black uppercase text-white/60 tracking-[0.2em]">Monto de Envío:</span>
+              <div className="p-8 bg-[#d4af37]/5 rounded-[2.5rem] border border-[#d4af37]/30 flex justify-between items-center">
+                <span className="text-xs font-black uppercase text-white/60 tracking-[0.2em]">Monto a Pagar:</span>
                 <span className="text-4xl font-black text-white tabular-nums">${orderDetails.total.toFixed(2)}</span>
               </div>
 
@@ -407,12 +421,67 @@ const App: React.FC = () => {
               <button 
                 onClick={() => executeTransaction(txHash)}
                 disabled={!txHash}
-                className={`w-full py-7 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.4em] flex items-center justify-center gap-5 transition-all shadow-2xl ${txHash ? 'gold-gradient text-black shadow-[#d4af37]/20 hover:scale-[1.02]' : 'bg-white/5 text-white/10'}`}
+                className={`w-full py-7 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.4em] flex items-center justify-center gap-5 transition-all shadow-2xl ${txHash ? 'gold-gradient text-black' : 'bg-white/5 text-white/10'}`}
               >
-                <Mail size={18} /> Confirmar Reporte
+                <Mail size={18} /> Confirmar Reporte de Pago
               </button>
-              
-              <p className="text-[10px] text-center text-white/20 uppercase tracking-[0.4em] italic font-medium">Validación en cadena de bloques requerida.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VENTA */}
+      {showSellModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-3xl">
+          <div className="absolute inset-0 bg-black/95" onClick={() => setShowSellModal(false)}></div>
+          <div className="relative w-full max-w-lg glass-card border-white/20 p-12 rounded-[4rem] animate-fade-in shadow-2xl">
+            <button onClick={() => setShowSellModal(false)} className="absolute top-10 right-10 text-white/20 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full"><X size={28}/></button>
+            
+            <div className="text-center mb-12">
+              <div className="w-24 h-24 bg-white/5 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-white/10">
+                <Wallet className="text-white" size={40} />
+              </div>
+              <h3 className="text-3xl font-black mb-4 tracking-tight">Liquidación de Oro</h3>
+              <p className="text-[11px] text-white/30 uppercase tracking-[0.3em] px-12 leading-loose">Ingresa tu billetera USDT para recibir el pago por tus gramos GLDC.</p>
+            </div>
+
+            <div className="space-y-10">
+              <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/10 flex justify-between items-center">
+                <span className="text-xs font-black uppercase text-white/60 tracking-[0.2em]">Recibirás aprox:</span>
+                <span className="text-4xl font-black text-[#d4af37] tabular-nums">${orderDetails.total.toFixed(2)}</span>
+              </div>
+
+              <div className="space-y-5">
+                <label className="text-[11px] font-black uppercase text-white/20 ml-5 tracking-[0.3em]">Tu Billetera de Destino (USDT)</label>
+                <input 
+                  type="text" 
+                  value={payoutAddress} 
+                  onChange={(e) => setPayoutAddress(e.target.value)} 
+                  className="w-full bg-white/5 border border-white/10 rounded-[2rem] py-6 px-8 text-sm font-mono focus:border-white transition-all text-white placeholder:text-white/5" 
+                  placeholder="0x... (Red Polygon/TRC20)"
+                />
+              </div>
+
+              <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/5 space-y-4">
+                <div className="flex justify-between text-[10px] font-black text-white/40 uppercase tracking-widest">
+                  <span>Gramos a Vender</span>
+                  <span>{orderDetails.grams} g</span>
+                </div>
+                <div className="flex justify-between text-[10px] font-black text-white/40 uppercase tracking-widest">
+                  <span>Comisión Red</span>
+                  <span>${orderDetails.fee.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => executeTransaction(payoutAddress)}
+                disabled={!payoutAddress}
+                className={`w-full py-7 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.4em] flex items-center justify-center gap-5 transition-all shadow-2xl ${payoutAddress ? 'bg-white text-black hover:scale-[1.02]' : 'bg-white/5 text-white/10'}`}
+              >
+                <Mail size={18} /> Enviar Solicitud de Venta
+              </button>
+
+              <p className="text-[9px] text-center text-white/20 uppercase tracking-[0.3em] font-bold">Un agente validará tu balance y procesará la transferencia.</p>
             </div>
           </div>
         </div>
