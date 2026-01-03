@@ -1,8 +1,8 @@
 
 export const TROY_OUNCE_TO_GRAMS = 31.1034768;
-// Dirección del token GLDC (Asegúrate de que sea la correcta en la red BSC)
-export const GLDC_TOKEN_ADDRESS = '0x0000000000000000000000000000000000000000'; 
-// API Key de BscScan (Opcional, pero recomendada para evitar límites de velocidad)
+// Contrato Cryptocagua Gold (GLDC) en red BSC
+export const GLDC_TOKEN_ADDRESS = '0x5287178Ad5812Ac7161a8169483d96159A684DF8'; 
+// API Key de BscScan para consultas de balance
 export const BSCSCAN_API_KEY = 'YourApiKeyToken'; 
-export const REFRESH_INTERVAL = 30000; // Reducido a 30s para mayor frescura
-export const TRANSACTION_FEE_RATE = 0.0075; 
+export const REFRESH_INTERVAL = 30000; 
+export const TRANSACTION_FEE_RATE = 0.0075;
