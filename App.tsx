@@ -9,20 +9,14 @@ import {
   RefreshCw,
   Info,
   Coins,
-  Copy,
-  CheckCircle2,
-  Mail,
   X,
   Loader2,
   ArrowRight,
   History,
-  Wallet,
-  ArrowDownLeft,
-  User,
   ShieldCheck,
-  ExternalLink,
   TrendingUp,
-  CircleDot
+  CircleDot,
+  Wallet
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -46,7 +40,7 @@ const App: React.FC = () => {
   });
 
   const [history, setHistory] = useState<PricePoint[]>([]);
-  const [insight, setInsight] = useState<string>("Sincronizando reservas...");
+  const [insight, setInsight] = useState<string>("Sincronizando con reservas...");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [orderAmount, setOrderAmount] = useState<string>('');
@@ -70,9 +64,8 @@ const App: React.FC = () => {
     return { grams, price, subtotal, fee, total };
   }, [orderAmount, orderType, goldPrice.gldcPrice]);
 
-  // LECTURA DIRECTA DE BSCSCAN (SIN USAR CONTRATO ETHERS)
   const fetchBalanceViaBscScan = useCallback(async (address: string) => {
-    if (GLDC_TOKEN_ADDRESS === '0x0000000000000000000000000000000000000000') return;
+    if (!address || GLDC_TOKEN_ADDRESS === '0x0000000000000000000000000000000000000000') return;
 
     try {
       const url = `https://api.bscscan.com/api?module=account&action=tokenbalance&contractaddress=${GLDC_TOKEN_ADDRESS}&address=${address}&tag=latest&apikey=${BSCSCAN_API_KEY}`;
@@ -80,7 +73,6 @@ const App: React.FC = () => {
       const data = await response.json();
 
       if (data.status === "1" && data.result) {
-        // Formateamos asumiendo 18 decimales (estándar BSC)
         const balance = parseFloat(formatUnits(data.result, 18));
         setWallet(prev => ({
           ...prev,
@@ -134,6 +126,21 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [refreshMarketData]);
 
+  // Manejador de cambio de cuentas en MetaMask
+  useEffect(() => {
+    const ethereum = (window as any).ethereum;
+    if (ethereum) {
+      ethereum.on('accountsChanged', (accounts: string[]) => {
+        if (accounts.length > 0) {
+          setWallet(prev => ({ ...prev, address: accounts[0], isConnected: true }));
+          fetchBalanceViaBscScan(accounts[0]);
+        } else {
+          setWallet({ address: null, balanceGLDC: 0, balanceUSD: 0, isConnected: false });
+        }
+      });
+    }
+  }, [fetchBalanceViaBscScan]);
+
   const connectWallet = async () => {
     const ethereum = (window as any).ethereum;
     if (!ethereum) {
@@ -176,7 +183,7 @@ const App: React.FC = () => {
     setOrderAmount('');
 
     const subject = `GLDC ${orderType} - ${newId}`;
-    const body = `REPORTE DE TRANSACCION\n\nID: ${newId}\nGRAMOS: ${grams}g\nTOTAL: $${total.toFixed(2)}\nCLIENTE: ${wallet.address}\nDATA: ${primaryInfo} ${secondaryInfo}`;
+    const body = `REPORTE DE OPERACION GLDC\n\nID: ${newId}\nCANTIDAD: ${grams}g GLDC\nTOTAL USD: $${total.toFixed(2)}\nCLIENTE: ${wallet.address}\nDATA: ${primaryInfo} ${secondaryInfo}`;
     
     window.open(`mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
   };
@@ -184,128 +191,145 @@ const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-6">
-        <div className="w-20 h-20 gold-gradient rounded-3xl animate-pulse flex items-center justify-center shadow-2xl">
-          <Coins className="text-black w-10 h-10" />
+        <div className="w-16 h-16 gold-gradient rounded-2xl animate-spin flex items-center justify-center shadow-2xl">
+          <Coins className="text-black w-8 h-8" />
         </div>
-        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-[#d4af37]">Accediendo a la Reserva...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-[#d4af37]">Cargando Dashboard de Reserva...</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pb-32 animate-fade-in">
-      {/* HEADER COMPACTO */}
-      <header className="sticky top-0 z-50 bg-black/80 backdrop-blur-lg border-b border-white/10 px-6 py-4">
+      {/* HEADER PREMIUM */}
+      <header className="sticky top-0 z-50 bg-[#050505] border-b border-white/10 px-6 py-5">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Coins className="text-[#d4af37] w-6 h-6" />
-            <h1 className="font-serif text-xl font-bold tracking-tight">CRYPTOCAGUA <span className="gold-text">GOLD</span></h1>
+            <Coins className="text-[#d4af37] w-8 h-8" />
+            <h1 className="font-serif text-2xl font-black">GLDC <span className="gold-text">GOLD</span></h1>
           </div>
           <button 
             onClick={connectWallet} 
             disabled={isWalletConnecting}
-            className="px-6 py-2 rounded-full text-[10px] font-black gold-gradient text-black hover:scale-105 transition-all shadow-lg uppercase tracking-widest flex items-center gap-2"
+            className={`px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-3 shadow-lg ${wallet.isConnected ? 'bg-white/5 border border-white/20 text-white' : 'gold-gradient text-black'}`}
           >
             {isWalletConnecting ? (
-              <Loader2 size={12} className="animate-spin" />
+              <Loader2 size={14} className="animate-spin" />
             ) : (
               wallet.isConnected ? (
-                <><CircleDot size={8} className="text-black" /> {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}</>
-              ) : 'Conectar MetaMask'
+                <><CircleDot size={8} className="text-green-400" /> {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}</>
+              ) : 'Sincronizar MetaMask'
             )}
           </button>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 pt-12 grid grid-cols-1 lg:grid-cols-12 gap-10">
+      <main className="max-w-7xl mx-auto px-6 pt-12 grid grid-cols-1 lg:grid-cols-12 gap-12">
         
-        {/* PANEL IZQUIERDO */}
-        <div className="lg:col-span-8 space-y-10">
+        {/* LADO IZQUIERDO: MERCADO */}
+        <div className="lg:col-span-8 space-y-12">
           
-          {/* CARDS PRECIO */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-[#111] p-8 rounded-[2rem] border border-white/5 shadow-xl">
-              <p className="text-[10px] font-black text-white/30 uppercase mb-2 tracking-widest">Precio Oro / Troy Oz</p>
-              <h3 className="text-4xl font-black text-white">${goldPrice.paxgPrice.toLocaleString()}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5">
+              <p className="text-[11px] font-black text-white/30 uppercase mb-3 tracking-widest">Oro Spot / Troy Ounce</p>
+              <h3 className="text-5xl font-black text-white tracking-tighter">${goldPrice.paxgPrice.toLocaleString()}</h3>
             </div>
-            <div className="bg-[#111] p-8 rounded-[2rem] border-2 border-[#d4af37]/30 shadow-2xl relative overflow-hidden">
-              <p className="text-[10px] font-black text-[#d4af37] uppercase mb-2 tracking-widest">Valor GLDC / 1 Gramo</p>
-              <h3 className="text-4xl font-black text-white">${goldPrice.gldcPrice.toFixed(2)}</h3>
-              <div className="mt-4 flex items-center gap-2 text-[9px] font-black text-green-400 uppercase">
-                <TrendingUp size={14} /> Mercado Binance Actualizado
+            <div className="bg-[#111] p-10 rounded-[3rem] border-2 border-[#d4af37]/30 relative overflow-hidden group">
+              <p className="text-[11px] font-black text-[#d4af37] uppercase mb-3 tracking-widest">GLDC / 1 Gramo de Oro</p>
+              <h3 className="text-5xl font-black text-white tracking-tighter">${goldPrice.gldcPrice.toFixed(2)}</h3>
+              <div className="mt-5 flex items-center gap-3 text-[10px] font-black text-green-400 uppercase">
+                <TrendingUp size={16} /> Binance API Activa
               </div>
             </div>
           </div>
 
-          {/* CHART */}
-          <div className="bg-[#0a0a0a] p-10 rounded-[3rem] border border-white/5">
-            <h2 className="text-[11px] font-black uppercase tracking-[0.4em] text-white/30 mb-8">Evolución de Reserva (72H)</h2>
+          <div className="bg-[#0a0a0a] p-12 rounded-[4rem] border border-white/5 shadow-2xl">
+            <div className="flex justify-between items-center mb-10">
+              <h2 className="text-[12px] font-black uppercase tracking-[0.5em] text-white/40">Gráfico de Valor en Tiempo Real</h2>
+              <button onClick={refreshMarketData} className="p-3 bg-white/5 rounded-xl border border-white/10 hover:bg-[#d4af37] hover:text-black transition-all">
+                <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
+              </button>
+            </div>
             <GoldChart data={history} />
           </div>
 
-          {/* IA ADVISOR */}
-          <div className="bg-[#d4af37]/10 p-8 rounded-[2rem] border border-[#d4af37]/20 flex gap-6 items-center">
-            <div className="w-12 h-12 bg-[#d4af37] rounded-2xl flex items-center justify-center shrink-0 shadow-lg">
-              <ShieldCheck className="text-black" size={24} />
+          <div className="bg-gradient-to-r from-[#d4af37]/10 to-transparent p-10 rounded-[3rem] border border-[#d4af37]/20 flex gap-8 items-center">
+            <div className="w-16 h-16 bg-[#d4af37] rounded-[2rem] flex items-center justify-center shrink-0 shadow-2xl">
+              <ShieldCheck className="text-black" size={32} />
             </div>
-            <p className="text-lg font-medium italic text-white/90">"{insight}"</p>
+            <p className="text-xl font-medium italic text-white/90 leading-relaxed">"{insight}"</p>
           </div>
         </div>
 
-        {/* PANEL DERECHO: BALANCES Y ACCIONES */}
+        {/* LADO DERECHO: PANEL DE CONTROL */}
         <div className="lg:col-span-4 space-y-10">
           
-          {/* BALANCE PRINCIPAL - MÁXIMO CONTRASTE (SIN TRANSPARENCIAS) */}
-          <div className="bg-[#d4af37] p-10 rounded-[3rem] shadow-[0_20px_50px_rgba(212,175,55,0.3)] relative overflow-hidden">
+          {/* BALANCE PANEL - FONDO DORADO SÓLIDO (MÁXIMA VISIBILIDAD) */}
+          <div className="bg-[#d4af37] p-12 rounded-[4rem] shadow-[0_40px_80px_rgba(212,175,55,0.4)] relative overflow-hidden border-4 border-[#f9e27d]">
             <div className="relative z-10">
-              <p className="text-[11px] font-black uppercase text-black mb-1 tracking-widest">SALDO DISPONIBLE (USD)</p>
-              <h2 className="text-6xl font-black text-black tracking-tighter tabular-nums mb-10 leading-none">
+              <p className="text-[13px] font-black uppercase text-black mb-2 tracking-widest">VALOR TOTAL ESTIMADO (USD)</p>
+              <h2 className="text-6xl font-black text-black tracking-tighter tabular-nums mb-12 leading-none">
                 ${wallet.balanceUSD.toLocaleString(undefined, {minimumFractionDigits:2})}
               </h2>
               
-              <div className="pt-8 border-t border-black/20 flex justify-between items-end">
+              <div className="pt-10 border-t border-black/20 flex justify-between items-end">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black text-black/50 uppercase tracking-widest">Gramos Oro (GLDC)</p>
+                  <p className="text-[11px] font-black text-black/60 uppercase tracking-widest">Gramos Oro (GLDC)</p>
                   <p className="text-4xl font-black text-black tabular-nums">{wallet.balanceGLDC.toFixed(3)}g</p>
                 </div>
-                <div className="text-[9px] font-black bg-black text-white px-3 py-1.5 rounded-lg uppercase">BSC Network</div>
+                <div className="text-[10px] font-black bg-black text-[#d4af37] px-4 py-2 rounded-2xl border border-[#d4af37]/20 uppercase tracking-widest shadow-xl">
+                  BEP-20
+                </div>
               </div>
             </div>
-            <Coins size={180} className="absolute -bottom-8 -right-8 opacity-10 text-black" />
+            <Coins size={220} className="absolute -bottom-16 -right-16 opacity-10 text-black pointer-events-none rotate-12" />
           </div>
 
-          {/* OPERACIONES */}
-          <div className="bg-[#111] p-10 rounded-[3rem] border border-white/10">
-            <div className="flex bg-black p-1.5 rounded-2xl mb-10">
-              <button onClick={() => setOrderType('BUY')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${orderType === 'BUY' ? 'bg-[#d4af37] text-black shadow-lg' : 'text-white/30'}`}>Comprar</button>
-              <button onClick={() => setOrderType('SELL')} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${orderType === 'SELL' ? 'bg-white text-black shadow-lg' : 'text-white/30'}`}>Vender</button>
+          {/* WIDGET OPERATIVO */}
+          <div className="bg-[#111] p-12 rounded-[4rem] border border-white/10 shadow-3xl">
+            <div className="flex gap-4 p-2 bg-black rounded-[2rem] mb-12">
+              <button 
+                onClick={() => setOrderType('BUY')} 
+                className={`flex-1 py-5 rounded-[1.5rem] text-[11px] font-black uppercase tracking-widest transition-all ${orderType === 'BUY' ? 'gold-gradient text-black shadow-2xl' : 'text-white/30 hover:text-white'}`}
+              >
+                Comprar
+              </button>
+              <button 
+                onClick={() => setOrderType('SELL')} 
+                className={`flex-1 py-5 rounded-[1.5rem] text-[11px] font-black uppercase tracking-widest transition-all ${orderType === 'SELL' ? 'bg-white text-black shadow-2xl' : 'text-white/30 hover:text-white'}`}
+              >
+                Vender
+              </button>
             </div>
 
-            <div className="space-y-8">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-white/30 ml-4">Gramos a Operar</label>
-                <input 
-                  type="number" 
-                  value={orderAmount} 
-                  onChange={(e) => setOrderAmount(e.target.value)} 
-                  className="w-full bg-black border-2 border-white/5 rounded-2xl py-6 px-6 text-4xl font-black focus:border-[#d4af37] transition-all text-center text-white outline-none" 
-                  placeholder="0.00"
-                />
+            <div className="space-y-10">
+              <div className="space-y-4 text-center">
+                <label className="text-[11px] font-black uppercase text-white/30 tracking-[0.3em]">Monto en Gramos</label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={orderAmount} 
+                    onChange={(e) => setOrderAmount(e.target.value)} 
+                    className="w-full bg-[#0a0a0a] border-2 border-white/10 rounded-[2.5rem] py-10 px-6 text-6xl font-black focus:border-[#d4af37] transition-all text-center text-white outline-none placeholder:text-white/5" 
+                    placeholder="0.00"
+                  />
+                  <div className="absolute right-10 top-1/2 -translate-y-1/2 text-[#d4af37] font-black text-xs tracking-widest">GLDC</div>
+                </div>
               </div>
 
               {orderDetails.grams > 0 && (
-                <div className="p-6 bg-black rounded-2xl border border-white/5 space-y-4 animate-fade-in">
-                  <div className="flex justify-between text-[11px] font-black uppercase">
-                    <span className="text-white/30">Precio</span>
+                <div className="p-8 bg-black rounded-[2.5rem] border-2 border-[#d4af37]/20 space-y-6 animate-fade-in">
+                  <div className="flex justify-between text-[12px] font-black uppercase">
+                    <span className="text-white/30">Precio Gramo</span>
                     <span>${orderDetails.price.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-[11px] font-black uppercase">
-                    <span className="text-white/30">Fees</span>
+                  <div className="flex justify-between text-[12px] font-black uppercase">
+                    <span className="text-white/30">Comisión Red</span>
                     <span className="text-red-400">-${orderDetails.fee.toFixed(2)}</span>
                   </div>
-                  <div className="pt-4 border-t border-white/10 flex justify-between items-center">
-                    <span className="text-[12px] font-black text-[#d4af37] uppercase">Total</span>
-                    <span className="text-3xl font-black">${orderDetails.total.toFixed(2)}</span>
+                  <div className="pt-6 border-t border-white/10 flex justify-between items-center">
+                    <span className="text-[14px] font-black text-[#d4af37] uppercase">Total</span>
+                    <span className="text-4xl font-black">${orderDetails.total.toFixed(2)}</span>
                   </div>
                 </div>
               )}
@@ -313,93 +337,95 @@ const App: React.FC = () => {
               <button 
                 onClick={() => orderType === 'BUY' ? setShowPaymentModal(true) : setShowSellModal(true)}
                 disabled={!wallet.isConnected || orderDetails.grams <= 0}
-                className={`w-full py-6 rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-3 transition-all ${wallet.isConnected && orderDetails.grams > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black shadow-xl' : 'bg-white text-black') : 'bg-white/5 text-white/10'}`}
+                className={`w-full py-8 rounded-[2.5rem] font-black uppercase text-[12px] tracking-[0.4em] flex items-center justify-center gap-5 transition-all active:scale-95 ${wallet.isConnected && orderDetails.grams > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black' : 'bg-white text-black') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
               >
-                {orderType === 'BUY' ? 'Generar Orden' : 'Retirar Fondos'}
-                <ArrowRight size={16} />
+                {orderType === 'BUY' ? 'Comprar Oro' : 'Solicitar Venta'}
+                <ArrowRight size={20} />
               </button>
             </div>
           </div>
 
-          {/* HISTORIAL */}
-          <div className="bg-[#111] p-8 rounded-[2.5rem] border border-white/5">
-            <h3 className="text-[10px] font-black uppercase text-white/20 mb-6 tracking-widest flex items-center gap-2">
-              <History size={14} /> Actividad Local
+          {/* HISTORIAL BREVE */}
+          <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5">
+            <h3 className="text-[10px] font-black uppercase text-white/20 mb-8 tracking-widest flex items-center gap-3">
+              <History size={16} /> Actividad Blockchain
             </h3>
-            {transactions.length === 0 ? (
-              <p className="text-[9px] text-center text-white/10 uppercase tracking-widest py-4">Sin operaciones recientes</p>
-            ) : (
-              <div className="space-y-3">
-                {transactions.map(tx => (
-                  <div key={tx.id} className="bg-black p-4 rounded-xl border border-white/5 flex justify-between items-center">
+            <div className="space-y-4">
+              {transactions.length === 0 ? (
+                <p className="text-[9px] text-center text-white/10 uppercase tracking-[0.5em] py-6">Dashboard Vacío</p>
+              ) : (
+                transactions.map(tx => (
+                  <div key={tx.id} className="p-5 bg-black rounded-2xl border border-white/5 flex justify-between items-center">
                     <div>
                       <p className={`text-[10px] font-black uppercase ${tx.type === 'BUY' ? 'text-[#d4af37]' : 'text-white'}`}>{tx.type}</p>
                       <p className="text-[8px] font-mono text-white/20">{tx.id}</p>
                     </div>
-                    <p className="font-black">{tx.amountGLDC}g</p>
+                    <p className="text-lg font-black">{tx.amountGLDC}g</p>
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
         </div>
       </main>
 
-      {/* MODALES REFORZADOS (SIN TRANSPARENCIAS) */}
+      {/* MODALES REFORZADOS (MAX CONTRASTE) */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-6 backdrop-blur-md">
-          <div className="bg-[#111] w-full max-w-md p-10 rounded-[3rem] border-2 border-[#d4af37]/30 animate-fade-in">
-            <div className="flex justify-between items-center mb-10">
-              <h3 className="text-2xl font-black">Confirmar Compra</h3>
-              <button onClick={() => setShowPaymentModal(false)}><X size={24}/></button>
+        <div className="fixed inset-0 z-[100] bg-black/98 flex items-center justify-center p-6 backdrop-blur-3xl">
+          <div className="bg-[#111] w-full max-w-md p-12 rounded-[4rem] border-2 border-[#d4af37]/40 shadow-[0_0_150px_rgba(212,175,55,0.2)] animate-fade-in relative">
+            <button onClick={() => setShowPaymentModal(false)} className="absolute top-10 right-10 text-white/30 hover:text-white transition-all"><X size={32}/></button>
+            <div className="text-center mb-10">
+              <h3 className="text-3xl font-black mb-3">Reporte de Pago</h3>
+              <p className="text-[10px] text-white/30 uppercase tracking-[0.3em]">Instrucciones de Fondeo USDT</p>
             </div>
-            <div className="space-y-8">
-              <div className="bg-black p-6 rounded-2xl border border-white/10 text-center">
-                <p className="text-[10px] font-black text-[#d4af37] uppercase mb-4 tracking-widest">Enviar USDT a (BSC)</p>
-                <code className="text-xs break-all block mb-6">{ADMIN_USDT_WALLET}</code>
-                <button onClick={() => {navigator.clipboard.writeText(ADMIN_USDT_WALLET); setIsCopied(true); setTimeout(()=>setIsCopied(false),2000)}} className="px-5 py-2.5 bg-[#d4af37] text-black rounded-lg text-[9px] font-black uppercase tracking-widest">
-                  {isCopied ? 'Copiado!' : 'Copiar Wallet'}
+            <div className="space-y-10">
+              <div className="p-8 bg-black rounded-[2rem] border border-white/10 text-center">
+                <p className="text-[10px] font-black text-[#d4af37] uppercase mb-4 tracking-widest text-center">Enviar USDT a (Red BSC)</p>
+                <code className="text-xs break-all block mb-6 font-mono text-white/80">{ADMIN_USDT_WALLET}</code>
+                <button onClick={() => {navigator.clipboard.writeText(ADMIN_USDT_WALLET); setIsCopied(true); setTimeout(()=>setIsCopied(false),2000)}} className="px-6 py-3 bg-[#d4af37] text-black rounded-xl text-[10px] font-black uppercase tracking-widest hover:brightness-110">
+                  {isCopied ? '¡Wallet Copiada!' : 'Copiar Wallet'}
                 </button>
               </div>
-              <div className="bg-[#d4af37] p-8 rounded-2xl text-center shadow-lg">
-                <p className="text-xs font-black text-black uppercase mb-1">Total a Enviar</p>
-                <p className="text-4xl font-black text-black">${orderDetails.total.toFixed(2)}</p>
+              <div className="bg-[#d4af37] p-10 rounded-[2rem] text-center shadow-xl">
+                <p className="text-xs font-black text-black uppercase mb-1">Monto Exacto USDT</p>
+                <p className="text-5xl font-black text-black">${orderDetails.total.toFixed(2)}</p>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-white/30 ml-2">Hash de Pago (TXID)</label>
-                <input type="text" value={txHash} onChange={(e)=>setTxHash(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl py-5 px-6 text-sm text-[#d4af37] font-mono" placeholder="0x..." />
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase text-white/30 ml-4">TXID de Pago</label>
+                <input type="text" value={txHash} onChange={(e)=>setTxHash(e.target.value)} className="w-full bg-black border border-white/20 rounded-2xl py-6 px-8 text-sm text-[#d4af37] font-mono outline-none focus:border-[#d4af37] transition-all" placeholder="0x..." />
               </div>
-              <button onClick={() => executeTransaction(txHash)} disabled={!txHash} className={`w-full py-6 rounded-2xl font-black text-[11px] uppercase tracking-widest ${txHash ? 'gold-gradient text-black' : 'bg-white/5 text-white/10'}`}>Reportar Pago</button>
+              <button onClick={() => executeTransaction(txHash)} disabled={!txHash} className={`w-full py-8 rounded-[2.5rem] font-black text-[12px] uppercase tracking-[0.4em] ${txHash ? 'gold-gradient text-black' : 'bg-white/5 text-white/10 cursor-not-allowed'}`}>Confirmar Transacción</button>
             </div>
           </div>
         </div>
       )}
 
       {showSellModal && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-6 backdrop-blur-md">
-          <div className="bg-[#111] w-full max-w-md p-10 rounded-[3rem] border-2 border-white/20 animate-fade-in">
-            <div className="flex justify-between items-center mb-10">
-              <h3 className="text-2xl font-black text-white">Vender GLDC</h3>
-              <button onClick={() => setShowSellModal(false)}><X size={24}/></button>
+        <div className="fixed inset-0 z-[100] bg-black/98 flex items-center justify-center p-6 backdrop-blur-3xl">
+          <div className="bg-[#111] w-full max-w-md p-12 rounded-[4rem] border-2 border-white/20 animate-fade-in relative">
+            <button onClick={() => setShowSellModal(false)} className="absolute top-10 right-10 text-white/30 hover:text-white transition-all"><X size={32}/></button>
+            <div className="text-center mb-10">
+              <h3 className="text-3xl font-black mb-3 text-white">Vender GLDC</h3>
+              <p className="text-[10px] text-white/30 uppercase tracking-[0.3em]">Retiro de Reservas</p>
             </div>
             <div className="space-y-8">
-              <div className="bg-black p-8 rounded-2xl border-2 border-[#d4af37]/30 text-center">
+              <div className="bg-black p-10 rounded-[2.5rem] border-2 border-[#d4af37]/30 text-center">
                 <p className="text-xs font-black text-white/30 uppercase mb-1">Recibirás en USDT</p>
-                <p className="text-4xl font-black text-[#d4af37]">${orderDetails.total.toFixed(2)}</p>
+                <p className="text-5xl font-black text-[#d4af37]">${orderDetails.total.toFixed(2)}</p>
               </div>
-              <div className="space-y-4">
-                <input type="text" value={userName} onChange={(e)=>setUserName(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl py-5 px-6 text-sm text-white" placeholder="Tu nombre" />
-                <input type="text" value={payoutAddress} onChange={(e)=>setPayoutAddress(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl py-5 px-6 text-sm text-white font-mono" placeholder="Wallet USDT Destino" />
+              <div className="space-y-5">
+                <input type="text" value={userName} onChange={(e)=>setUserName(e.target.value)} className="w-full bg-black border border-white/10 rounded-2xl py-6 px-8 text-sm text-white focus:border-white transition-all outline-none" placeholder="Nombre completo" />
+                <input type="text" value={payoutAddress} onChange={(e)=>setPayoutAddress(e.target.value)} className="w-full bg-black border border-white/10 rounded-2xl py-6 px-8 text-sm text-[#d4af37] font-mono focus:border-[#d4af37] transition-all outline-none" placeholder="Wallet USDT Destino" />
               </div>
-              <button onClick={() => executeTransaction(payoutAddress, userName)} disabled={!payoutAddress || !userName} className={`w-full py-6 rounded-2xl font-black text-[11px] uppercase tracking-widest ${payoutAddress && userName ? 'bg-white text-black' : 'bg-white/5 text-white/10'}`}>Enviar Solicitud</button>
-              <p className="text-[9px] text-center text-white/20 uppercase tracking-widest font-black leading-loose">Se procesará el pago tras recibir los tokens en nuestra reserva fría.</p>
+              <button onClick={() => executeTransaction(payoutAddress, userName)} disabled={!payoutAddress || !userName} className={`w-full py-8 rounded-[2.5rem] font-black text-[12px] uppercase tracking-[0.4em] ${payoutAddress && userName ? 'bg-white text-black' : 'bg-white/5 text-white/10 cursor-not-allowed'}`}>Enviar Solicitud</button>
+              <p className="text-[9px] text-center text-white/20 uppercase tracking-[0.2em] font-black leading-loose">Liquidación procesada tras la verificación de los tokens en nuestra reserva.</p>
             </div>
           </div>
         </div>
       )}
 
-      <footer className="text-center py-20 border-t border-white/5 opacity-20">
-        <p className="text-[10px] font-black uppercase tracking-[1em]">Cryptocagua Gold • Reserve v4.0</p>
+      <footer className="text-center py-24 border-t border-white/5 opacity-20">
+        <p className="text-[11px] font-black uppercase tracking-[1em]">Cryptocagua Gold Reserve • Dashboard v4.5</p>
       </footer>
     </div>
   );
