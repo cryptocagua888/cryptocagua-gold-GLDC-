@@ -1,22 +1,36 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Analysis function for gold market insights using Gemini
+// Cache local simple para el último insight exitoso
+let lastSuccessfulInsight = "El oro mantiene su valor histórico. Una inversión sólida para tu portafolio digital.";
+
 export const getGoldMarketInsight = async (currentGramPrice: number) => {
   try {
-    // Initializing with process.env.API_KEY as per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Analiza brevemente el mercado del oro actual. Precio actual: $${currentGramPrice.toFixed(2)}/gramo. Explica por qué el token GLDC es ideal contra la inflación. Responde en español, máximo 3 líneas.`,
+      contents: `Contexto: Eres un experto en finanzas. El precio actual del oro es $${currentGramPrice.toFixed(2)}/gramo. Explica por qué el token GLDC (respaldado por oro físico) es una excelente reserva de valor. Responde en español, tono profesional y optimista, máximo 20 palabras.`,
       config: {
-        temperature: 0.7,
+        temperature: 0.6,
+        topP: 0.8,
       }
     });
 
-    return response.text || "Análisis de mercado estable para el oro.";
-  } catch (error) {
-    console.error("Gemini Error:", error);
-    return "El oro mantiene su valor histórico. Una inversión sólida para tu portafolio digital.";
+    const text = response.text?.trim();
+    if (text) {
+      lastSuccessfulInsight = text;
+      return text;
+    }
+    return lastSuccessfulInsight;
+
+  } catch (error: any) {
+    console.warn("Gemini Service Insight Error:", error?.message || error);
+    
+    // Si es un error de cuota (429), devolvemos el último insight guardado sin asustar al usuario
+    if (error?.message?.includes("429") || error?.status === 429) {
+      return lastSuccessfulInsight;
+    }
+
+    return "El oro físico sigue siendo el activo refugio definitivo frente a la volatilidad de los mercados globales.";
   }
 };
