@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { formatUnits } from 'ethers';
+import { JsonRpcProvider, Contract, formatUnits } from 'ethers';
 import { 
   Wallet, 
   Coins, 
@@ -18,12 +18,15 @@ import { GoldState, WalletState, PricePoint } from './types';
 import { 
   TROY_OUNCE_TO_GRAMS, 
   GLDC_TOKEN_ADDRESS, 
-  BSCSCAN_API_KEY, 
   FEE_RATE, 
   ADMIN_WALLET, 
   SUPPORT_EMAIL 
 } from './constants';
 import { getMarketAnalysis } from './services/aiService';
+
+// ABI mínimo para leer el balance de un token ERC20/BEP20
+const MIN_ABI = ["function balanceOf(address) view returns (uint256)"];
+const BSC_RPC = "https://bsc-dataseed.binance.org/";
 
 const App: React.FC = () => {
   const [gold, setGold] = useState<GoldState>({ 
@@ -58,64 +61,27 @@ const App: React.FC = () => {
     return { qty, subtotal, fee, total };
   }, [orderAmount, gold.gramPrice, orderType]);
 
-  const checkNetwork = async () => {
-    const eth = (window as any).ethereum;
-    if (!eth) return;
-    try {
-      const chainId = await eth.request({ method: 'eth_chainId' });
-      setWrongNetwork(chainId !== '0x38');
-    } catch (e) {
-      console.error("Network check error:", e);
-    }
-  };
-
-  const switchNetwork = async () => {
-    const eth = (window as any).ethereum;
-    if (!eth) return;
-    try {
-      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] });
-      setWrongNetwork(false);
-    } catch (e: any) {
-      if (e.code === 4902) {
-        try {
-          await eth.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: '0x38',
-              chainName: 'Binance Smart Chain',
-              nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-              rpcUrls: ['https://bsc-dataseed.binance.org/'],
-              blockExplorerUrls: ['https://bscscan.com/'],
-            }],
-          });
-        } catch (addError) {
-          console.error("Error adding network:", addError);
-        }
-      }
-    }
-  };
-
   const fetchWalletBalance = useCallback(async (address: string) => {
     if (!address) return;
     try {
-      const url = `https://api.bscscan.com/api?module=account&action=tokenbalance&contractaddress=${GLDC_TOKEN_ADDRESS}&address=${address}&tag=latest&apikey=${BSCSCAN_API_KEY}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.status === '1' && data.result) {
-        const bal = parseFloat(formatUnits(data.result, 18));
-        setWallet(prev => ({ 
-          ...prev, 
-          address, 
-          isConnected: true, 
-          balanceGLDC: bal
-        }));
-      } else {
-        setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: 0 }));
-      }
+      const provider = new JsonRpcProvider(BSC_RPC);
+      const contract = new Contract(GLDC_TOKEN_ADDRESS, MIN_ABI, provider);
+      const balance = await contract.balanceOf(address);
+      const balFormatted = parseFloat(formatUnits(balance, 18));
+      
+      setWallet(prev => ({ 
+        ...prev, 
+        address, 
+        isConnected: true, 
+        balanceGLDC: balFormatted,
+        balanceUSD: balFormatted * gold.gramPrice
+      }));
     } catch (e) {
-      console.error("Balance fetch error:", e);
+      console.error("Error al leer balance desde blockchain:", e);
+      // En caso de error, mantenemos la dirección pero balance 0
+      setWallet(prev => ({ ...prev, address, isConnected: true }));
     }
-  }, []);
+  }, [gold.gramPrice]);
 
   const fetchMarketData = useCallback(async () => {
     setIsRefreshing(true);
@@ -125,13 +91,13 @@ const App: React.FC = () => {
       if (data?.price) {
         const spot = parseFloat(data.price);
         const gram = spot / TROY_OUNCE_TO_GRAMS;
-        setGold(prev => ({ ...prev, spotPrice: spot, gramPrice: gram, loading: false }));
+        setGold(prev => ({ ...prev, spotPrice: spot, gramPrice: gram }));
         
         getMarketAnalysis(gram).then(setAnalysis).catch(() => {
-          setAnalysis("El oro físico tokenizado GLDC ofrece máxima seguridad y respaldo tangible.");
+          setAnalysis("GLDC: Respaldo en oro físico con la liquidez de la Binance Smart Chain.");
         });
 
-        // Actualizar balance si ya hay una dirección
+        // Si ya hay wallet, refrescar balance con el nuevo precio
         const eth = (window as any).ethereum;
         if (eth && eth.selectedAddress) {
           fetchWalletBalance(eth.selectedAddress);
@@ -155,9 +121,13 @@ const App: React.FC = () => {
       const accounts = await eth.request({ method: "eth_requestAccounts" });
       if (accounts && accounts[0]) {
         const userAddress = accounts[0];
+        // Forzar actualización inmediata de UI
         setWallet(prev => ({ ...prev, address: userAddress, isConnected: true }));
-        await checkNetwork();
         fetchWalletBalance(userAddress);
+        
+        // Verificar red
+        const chainId = await eth.request({ method: 'eth_chainId' });
+        setWrongNetwork(chainId !== '0x38');
       }
     } catch (e) { 
       console.error("Connection error:", e); 
@@ -165,14 +135,17 @@ const App: React.FC = () => {
   };
 
   const handleOpenAiKey = async () => {
-    // Usar la API oficial de AI Studio según las reglas
-    if ((window as any).aistudio && typeof (window as any).aistudio.openSelectKey === 'function') {
-      await (window as any).aistudio.openSelectKey();
-      // Asumimos éxito e intentamos actualizar la data con la nueva key (que estará en process.env.API_KEY)
-      fetchMarketData();
+    const aiEnv = (window as any).aistudio;
+    if (aiEnv && typeof aiEnv.openSelectKey === 'function') {
+      try {
+        await aiEnv.openSelectKey();
+        // Según las reglas, procedemos asumiendo éxito
+        fetchMarketData();
+      } catch (e) {
+        console.error("Error al abrir selector de llave:", e);
+      }
     } else {
-      // Si no está disponible el objeto, alertar amigablemente
-      alert("Por favor, selecciona una API Key en el panel de AI Studio para activar el análisis.");
+      alert("Por favor, selecciona tu API Key en el panel superior de AI Studio para activar el análisis inteligente.");
     }
   };
 
@@ -194,19 +167,15 @@ const App: React.FC = () => {
     
     const eth = (window as any).ethereum;
     if (eth) {
-      // Reconectar si ya hay permisos
+      // Auto-reconectar si ya hay permisos
       eth.request({ method: 'eth_accounts' }).then((accounts: string[]) => {
         if (accounts && accounts[0]) {
-          const userAddress = accounts[0];
-          setWallet(prev => ({ ...prev, address: userAddress, isConnected: true }));
-          fetchWalletBalance(userAddress);
-          checkNetwork();
+          fetchWalletBalance(accounts[0]);
         }
       });
 
       eth.on('accountsChanged', (accs: string[]) => {
         if (accs[0]) {
-          setWallet(prev => ({ ...prev, address: accs[0], isConnected: true }));
           fetchWalletBalance(accs[0]);
         } else {
           setWallet({ address: null, balanceGLDC: 0, balanceUSD: 0, isConnected: false });
@@ -220,12 +189,12 @@ const App: React.FC = () => {
   }, [fetchMarketData, fetchWalletBalance]);
 
   return (
-    <div className="min-h-screen pb-12 transition-opacity duration-1000">
+    <div className="min-h-screen pb-12">
       {wrongNetwork && wallet.isConnected && (
         <div className="bg-red-600 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 text-xs font-black sticky top-0 z-[100] border-b border-red-500/50">
-          <AlertCircle size={18} className="animate-bounce" />
-          <span>RED INCORRECTA: POR FAVOR CONÉCTATE A BINANCE SMART CHAIN</span>
-          <button onClick={switchNetwork} className="bg-white text-red-600 px-6 py-2 rounded-full shadow-xl hover:scale-105 transition-transform">CAMBIAR A BSC</button>
+          <AlertCircle size={18} />
+          <span>RED INCORRECTA: CAMBIA A BINANCE SMART CHAIN</span>
+          <button onClick={() => (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] })} className="bg-white text-red-600 px-6 py-2 rounded-full font-black uppercase">CAMBIAR RED</button>
         </div>
       )}
 
@@ -245,7 +214,7 @@ const App: React.FC = () => {
             onClick={handleOpenAiKey}
             className="ia-button-glow flex items-center gap-2 px-5 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-full text-[10px] font-black uppercase transition-all"
           >
-            <Key size={14} className="text-yellow-500" /> <span className="hidden xs:inline">IA KEY</span>
+            <Key size={14} className="text-yellow-500" /> <span className="hidden xs:inline">IA ANALYST</span>
           </button>
           <button 
             onClick={connectWallet}
@@ -262,15 +231,14 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-10 mt-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="glass p-8 rounded-[2.5rem] relative overflow-hidden group">
+            <div className="glass p-8 rounded-[2.5rem]">
               <p className="text-[10px] font-black uppercase text-white/30 tracking-widest mb-2">Valor Onza (Spot)</p>
               <div className="flex items-end gap-3">
                 <h2 className="text-5xl font-black tracking-tighter">${gold.spotPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}</h2>
                 <span className="mb-2 text-green-500 font-bold text-sm">+{gold.change24h}%</span>
               </div>
             </div>
-            <div className="glass p-8 rounded-[2.5rem] border-2 border-yellow-500/30 shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-20"><ShieldCheck size={40} className="text-yellow-500" /></div>
+            <div className="glass p-8 rounded-[2.5rem] border-2 border-yellow-500/30 shadow-2xl">
               <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest mb-2">Precio GLDC (1 Gramo)</p>
               <h2 className="text-5xl font-black tracking-tighter gold-text">${gold.gramPrice.toFixed(2)}</h2>
             </div>
@@ -279,7 +247,7 @@ const App: React.FC = () => {
           <div className="glass p-8 rounded-[3rem]">
             <div className="flex justify-between items-center mb-10">
               <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-white/40 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div> Monitor de Reservas
+                <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div> Monitor en Tiempo Real
               </h3>
               <button onClick={fetchMarketData} className="p-2 hover:bg-white/5 rounded-full transition-all">
                 <RefreshCw size={18} className={`${isRefreshing ? 'animate-spin' : ''} text-white/20`} />
@@ -308,31 +276,29 @@ const App: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-8">
-          <div className="gold-gradient p-10 rounded-[3.5rem] text-black shadow-2xl relative overflow-hidden group">
-            <div className="relative z-10">
-              <p className="text-[11px] font-black uppercase opacity-60 mb-3 tracking-widest">Cartera de Oro</p>
-              <h3 className="text-6xl font-black tracking-tighter mb-10 leading-none">
-                {wallet.isConnected ? `$${currentBalanceUSD.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '$---'}
-              </h3>
-              <div className="pt-8 border-t border-black/10 flex justify-between items-end">
-                <div>
-                  <p className="text-[10px] font-bold opacity-50 uppercase">Balance GLDC</p>
-                  <p className="text-3xl font-black">{wallet.isConnected ? wallet.balanceGLDC.toFixed(4) : '0.0000'}g</p>
-                </div>
-                <div className="bg-black/10 px-4 py-2 rounded-xl text-[9px] font-black tracking-widest border border-black/5">BSC BEP20</div>
+          <div className="gold-gradient p-10 rounded-[3.5rem] text-black shadow-2xl relative overflow-hidden">
+            <p className="text-[11px] font-black uppercase opacity-60 mb-3 tracking-widest">Cartera de Inversión</p>
+            <h3 className="text-6xl font-black tracking-tighter mb-10 leading-none">
+              {wallet.isConnected ? `$${currentBalanceUSD.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '$---'}
+            </h3>
+            <div className="pt-8 border-t border-black/10 flex justify-between items-end">
+              <div>
+                <p className="text-[10px] font-bold opacity-50 uppercase">Balance GLDC</p>
+                <p className="text-3xl font-black">{wallet.isConnected ? wallet.balanceGLDC.toFixed(4) : '0.0000'}g</p>
               </div>
+              <div className="bg-black/10 px-4 py-2 rounded-xl text-[9px] font-black tracking-widest border border-black/5 uppercase">BEP20</div>
             </div>
-            <Coins size={220} className="absolute -bottom-12 -right-12 opacity-10 rotate-12 group-hover:rotate-45 transition-transform duration-1000" />
+            <Coins size={220} className="absolute -bottom-12 -right-12 opacity-10 rotate-12" />
           </div>
 
           <div className="glass p-10 rounded-[3.5rem] border border-white/5">
             <div className="flex bg-black p-2 rounded-full mb-10 border border-white/10 shadow-inner">
-              <button onClick={() => setOrderType('BUY')} className={`flex-1 py-5 rounded-full text-[11px] font-black uppercase transition-all ${orderType === 'BUY' ? 'bg-yellow-500 text-black shadow-2xl shadow-yellow-500/20' : 'text-white/30'}`}>COMPRAR</button>
-              <button onClick={() => setOrderType('SELL')} className={`flex-1 py-5 rounded-full text-[11px] font-black uppercase transition-all ${orderType === 'SELL' ? 'bg-white text-black shadow-2xl shadow-white/20' : 'text-white/30'}`}>VENDER</button>
+              <button onClick={() => setOrderType('BUY')} className={`flex-1 py-5 rounded-full text-[11px] font-black uppercase transition-all ${orderType === 'BUY' ? 'bg-yellow-500 text-black' : 'text-white/30'}`}>COMPRAR</button>
+              <button onClick={() => setOrderType('SELL')} className={`flex-1 py-5 rounded-full text-[11px] font-black uppercase transition-all ${orderType === 'SELL' ? 'bg-white text-black' : 'text-white/30'}`}>VENDER</button>
             </div>
             <div className="space-y-10">
               <div className="space-y-4 text-center">
-                <label className="text-[10px] font-black uppercase text-white/20 tracking-[0.3em]">Gramos de Oro Físico</label>
+                <label className="text-[10px] font-black uppercase text-white/20 tracking-[0.3em]">Cantidad de Oro (Gramos)</label>
                 <input 
                   type="number" value={orderAmount} onChange={(e) => setOrderAmount(e.target.value)} placeholder="0.00"
                   className="w-full bg-black/50 border border-white/5 rounded-[2.5rem] py-12 text-6xl font-black text-center outline-none focus:border-yellow-500/50 transition-all placeholder:text-white/5"
@@ -341,9 +307,9 @@ const App: React.FC = () => {
               <button 
                 onClick={() => setShowConfirm(true)}
                 disabled={!wallet.isConnected || parseFloat(orderAmount) <= 0 || wrongNetwork}
-                className={`w-full py-8 rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-3 cursor-pointer ${wallet.isConnected && !wrongNetwork && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black shadow-2xl shadow-yellow-500/20 hover:scale-[1.02]' : 'bg-white text-black shadow-2xl shadow-white/20 hover:scale-[1.02]') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
+                className={`w-full py-8 rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-3 cursor-pointer ${wallet.isConnected && !wrongNetwork && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black shadow-2xl hover:scale-[1.02]' : 'bg-white text-black shadow-2xl hover:scale-[1.02]') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
               >
-                {orderType === 'BUY' ? 'SOLICITAR ADQUISICIÓN' : 'SOLICITAR LIQUIDACIÓN'}
+                {orderType === 'BUY' ? 'SOLICITAR ORO' : 'SOLICITAR LIQUIDEZ'}
                 <ChevronRight size={20} />
               </button>
               {!wallet.isConnected && (
@@ -355,21 +321,21 @@ const App: React.FC = () => {
       </main>
 
       {showConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80 animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80">
           <div className="glass w-full max-w-xl p-12 rounded-[4rem] border border-yellow-500/30 relative shadow-2xl">
             <button onClick={() => setShowConfirm(false)} className="absolute top-10 right-10 text-white/20 hover:text-white transition-colors cursor-pointer"><X size={32}/></button>
-            <h3 className="text-4xl font-black text-center mb-10 uppercase tracking-tighter">Confirmación</h3>
+            <h3 className="text-4xl font-black text-center mb-10 uppercase tracking-tighter">Liquidación Final</h3>
             <div className="space-y-8">
               <div className="bg-black p-10 rounded-[3rem] border border-white/5 text-center">
-                <p className="text-[11px] font-black text-yellow-500 uppercase mb-3 tracking-widest">Total a pagar</p>
+                <p className="text-[11px] font-black text-yellow-500 uppercase mb-3 tracking-widest">Total Estimado</p>
                 <h4 className="text-6xl font-black">${orderDetails.total.toFixed(2)} <span className="text-xl">USDT</span></h4>
               </div>
               <div className="p-10 bg-yellow-500/5 rounded-[3rem] border border-yellow-500/10 text-center">
-                <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">Enviar a (Red BSC)</p>
+                <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">Cuenta Receptora (BSC)</p>
                 <code className="text-[11px] break-all block font-mono text-white/60 bg-black/40 p-5 rounded-2xl border border-white/5 mb-8">{ADMIN_WALLET}</code>
-                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Dirección copiada"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all cursor-pointer">Copiar Cuenta</button>
+                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Dirección copiada"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all">Copiar Billetera</button>
               </div>
-              <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl cursor-pointer hover:scale-[1.02]">NOTIFICAR PAGO <Send size={20}/></button>
+              <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl hover:scale-[1.02]">NOTIFICAR OPERACIÓN <Send size={20}/></button>
             </div>
           </div>
         </div>
