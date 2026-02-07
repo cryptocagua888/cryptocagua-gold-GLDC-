@@ -26,8 +26,18 @@ import {
 import { getMarketAnalysis } from './services/aiService';
 
 const App: React.FC = () => {
-  const [gold, setGold] = useState<GoldState>({ spotPrice: 2400, gramPrice: 77.16, change24h: 0.45, loading: true });
-  const [wallet, setWallet] = useState<WalletState>({ address: null, balanceGLDC: 0, balanceUSD: 0, isConnected: false });
+  const [gold, setGold] = useState<GoldState>({ 
+    spotPrice: 2400, 
+    gramPrice: 77.16, 
+    change24h: 0.45, 
+    loading: false 
+  });
+  const [wallet, setWallet] = useState<WalletState>({ 
+    address: null, 
+    balanceGLDC: 0, 
+    balanceUSD: 0, 
+    isConnected: false 
+  });
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [analysis, setAnalysis] = useState<string>("Iniciando terminal segura...");
   const [orderAmount, setOrderAmount] = useState<string>("");
@@ -91,48 +101,65 @@ const App: React.FC = () => {
       const data = await response.json();
       if (data.status === '1' && data.result) {
         const bal = parseFloat(formatUnits(data.result, 18));
-        setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: bal }));
+        setWallet(prev => ({ 
+          ...prev, 
+          address, 
+          isConnected: true, 
+          balanceGLDC: bal,
+          balanceUSD: bal * gold.gramPrice
+        }));
       } else {
-        // Si no hay balance o error de API, al menos marcar conectado
         setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: 0 }));
       }
     } catch (e) {
       console.error("Balance fetch error:", e);
       setWallet(prev => ({ ...prev, address, isConnected: true }));
     }
-  }, []);
+  }, [gold.gramPrice]);
 
   const fetchMarketData = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      // Intentar obtener precio real de PAXG (Oro tokenizado)
       const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT');
       const data = await res.json();
       if (data?.price) {
         const spot = parseFloat(data.price);
         const gram = spot / TROY_OUNCE_TO_GRAMS;
         setGold(prev => ({ ...prev, spotPrice: spot, gramPrice: gram, loading: false }));
-        getMarketAnalysis(gram).then(setAnalysis);
-        if (wallet.address) fetchWalletBalance(wallet.address);
+        
+        // Llamada a la IA para análisis
+        getMarketAnalysis(gram).then(setAnalysis).catch(() => {
+          setAnalysis("El oro se mantiene como el activo de reserva definitivo frente a la volatilidad.");
+        });
+
+        // Si hay una wallet conectada, actualizar su balance con el nuevo precio
+        if (wallet.address) {
+           fetchWalletBalance(wallet.address);
+        }
       }
     } catch (e) { 
       console.error("Market data error:", e); 
+      setGold(prev => ({ ...prev, loading: false }));
     } finally { 
       setIsRefreshing(false); 
     }
   }, [wallet.address, fetchWalletBalance]);
 
   const connectWallet = async () => {
-    console.log("Intentando conectar wallet...");
     const eth = (window as any).ethereum;
-    if (!eth) return alert("MetaMask no detectado. Por favor instala la extensión.");
+    if (!eth) {
+      alert("No se detectó una billetera. Por favor instala MetaMask.");
+      return;
+    }
     
     try {
       const accounts = await eth.request({ method: "eth_requestAccounts" });
       if (accounts && accounts[0]) {
-        console.log("Cuenta conectada:", accounts[0]);
-        setWallet(prev => ({ ...prev, address: accounts[0], isConnected: true }));
+        const userAddress = accounts[0];
+        setWallet(prev => ({ ...prev, address: userAddress, isConnected: true }));
         await checkNetwork();
-        fetchWalletBalance(accounts[0]);
+        fetchWalletBalance(userAddress);
       }
     } catch (e) { 
       console.error("Error al conectar wallet:", e); 
@@ -140,17 +167,16 @@ const App: React.FC = () => {
   };
 
   const handleOpenAiKey = async () => {
-    console.log("Iniciando selección de llave de IA...");
-    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+    const aistudio = (window as any).aistudio;
+    if (aistudio && typeof aistudio.openSelectKey === 'function') {
       try {
-        await window.aistudio.openSelectKey();
+        await aistudio.openSelectKey();
         fetchMarketData();
       } catch (e) {
         console.error("Error al abrir selector de llave:", e);
       }
     } else {
-      console.warn("window.aistudio no está disponible en este entorno.");
-      alert("La configuración de la IA está disponible únicamente dentro del entorno de AI Studio.");
+      alert("La configuración de la llave de IA solo está disponible en el entorno de AI Studio.");
     }
   };
 
@@ -165,6 +191,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchMarketData();
+    // Generar historial ficticio inicial
     setHistory(Array.from({ length: 20 }, (_, i) => ({
       time: `${i}:00`,
       price: 77.16 + (Math.random() - 0.5) * 2
@@ -212,13 +239,13 @@ const App: React.FC = () => {
             onClick={handleOpenAiKey}
             className="ia-button-glow flex items-center gap-2 px-5 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-full text-[10px] font-black uppercase transition-all"
           >
-            <Key size={14} className="text-yellow-500" /> <span className="hidden xs:inline">IA ANALYST</span>
+            <Key size={14} className="text-yellow-500" /> <span className="hidden xs:inline">IA KEY</span>
           </button>
           <button 
             onClick={connectWallet}
             className={`px-6 py-2.5 rounded-full text-[11px] font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${wallet.isConnected ? 'bg-white/5 border border-white/10' : 'gold-gradient text-black shadow-2xl shadow-yellow-500/10 hover:scale-105'}`}
           >
-            <Wallet size={16} /> {wallet.isConnected ? `${wallet.address?.slice(0,5)}...${wallet.address?.slice(-4)}` : 'CONECTAR'}
+            <Wallet size={16} /> {wallet.isConnected ? `${wallet.address?.slice(0,6)}...${wallet.address?.slice(-4)}` : 'CONECTAR WALLET'}
           </button>
         </div>
       </nav>
@@ -311,7 +338,7 @@ const App: React.FC = () => {
                 <ChevronRight size={20} />
               </button>
               {!wallet.isConnected && (
-                <p className="text-center text-[10px] font-bold text-yellow-500/40 uppercase tracking-widest animate-pulse">Debes conectar tu wallet para operar</p>
+                <p className="text-center text-[10px] font-bold text-yellow-500/40 uppercase tracking-widest animate-pulse">Conecta tu wallet para operar</p>
               )}
             </div>
           </div>
@@ -322,18 +349,18 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80 animate-fade-in">
           <div className="glass w-full max-w-xl p-12 rounded-[4rem] border border-yellow-500/30 relative shadow-2xl">
             <button onClick={() => setShowConfirm(false)} className="absolute top-10 right-10 text-white/20 hover:text-white transition-colors cursor-pointer"><X size={32}/></button>
-            <h3 className="text-4xl font-black text-center mb-10 uppercase tracking-tighter">Detalles de la Orden</h3>
+            <h3 className="text-4xl font-black text-center mb-10 uppercase tracking-tighter">Confirmación</h3>
             <div className="space-y-8">
               <div className="bg-black p-10 rounded-[3rem] border border-white/5 text-center">
-                <p className="text-[11px] font-black text-yellow-500 uppercase mb-3 tracking-widest">Importe Total (USDT)</p>
-                <h4 className="text-6xl font-black">${orderDetails.total.toFixed(2)}</h4>
+                <p className="text-[11px] font-black text-yellow-500 uppercase mb-3 tracking-widest">Total a pagar</p>
+                <h4 className="text-6xl font-black">${orderDetails.total.toFixed(2)} <span className="text-xl">USDT</span></h4>
               </div>
               <div className="p-10 bg-yellow-500/5 rounded-[3rem] border border-yellow-500/10 text-center">
-                <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">Cuenta de Depósito (BEP20)</p>
+                <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">Enviar a (Red BSC)</p>
                 <code className="text-[11px] break-all block font-mono text-white/60 bg-black/40 p-5 rounded-2xl border border-white/5 mb-8">{ADMIN_WALLET}</code>
-                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Dirección copiada"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all cursor-pointer">Copiar Dirección</button>
+                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Copiado al portapapeles"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all cursor-pointer">Copiar Cuenta</button>
               </div>
-              <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl cursor-pointer hover:scale-[1.02]">NOTIFICAR TRANSFERENCIA <Send size={20}/></button>
+              <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl cursor-pointer hover:scale-[1.02]">NOTIFICAR PAGO <Send size={20}/></button>
             </div>
           </div>
         </div>
