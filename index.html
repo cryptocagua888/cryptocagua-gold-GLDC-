@@ -4,41 +4,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cryptocagua Gold (GLDC)</title>
+  <title>GLDC | Cryptocagua Gold Reserve</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet">
   <script>
     window.process = window.process || { env: {} };
   </script>
   <style>
+    :root {
+      --gold-primary: #D4AF37;
+      --gold-light: #F9E27D;
+      --gold-dark: #B8860B;
+      --bg-deep: #050505;
+    }
     body {
       font-family: 'Inter', sans-serif;
-      background-color: #050505;
+      background-color: var(--bg-deep);
       color: #ffffff;
       margin: 0;
-      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
-    .font-serif {
-      font-family: 'Playfair Display', serif;
-    }
+    .font-serif { font-family: 'Playfair Display', serif; }
     .gold-gradient {
-      background: linear-gradient(135deg, #d4af37 0%, #f9e27d 50%, #b8860b 100%);
+      background: linear-gradient(135deg, var(--gold-dark) 0%, var(--gold-light) 50%, var(--gold-primary) 100%);
     }
     .gold-text {
-      background: linear-gradient(135deg, #d4af37 0%, #f9e27d 50%, #b8860b 100%);
+      background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-light) 50%, var(--gold-dark) 100%);
       -webkit-background-clip: text;
-      -webkit-fill-color: transparent;
-      color: #d4af37;
+      -webkit-text-fill-color: transparent;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
+    .glass {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
-    .animate-fade-in {
-      animation: fadeIn 0.4s ease-out forwards;
+    .gold-border {
+      border: 1px solid rgba(212, 175, 55, 0.3);
     }
-    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
-      -webkit-appearance: none; margin: 0;
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .loading-shimmer {
+      background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
     }
   </style>
   <script type="importmap">
@@ -52,8 +62,8 @@
     "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react,react-dom",
     "recharts": "https://esm.sh/recharts@2.13.3?external=react,react-dom",
     "ethers": "https://esm.sh/ethers@6.13.2",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
   }
 }
 </script>

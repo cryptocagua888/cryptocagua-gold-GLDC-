@@ -1,8 +1,7 @@
 
 export const TROY_OUNCE_TO_GRAMS = 31.1034768;
-// Contrato Cryptocagua Gold (GLDC) en red BSC
-export const GLDC_TOKEN_ADDRESS = '0x5287178Ad5812Ac7161a8169483d96159A684DF8'; 
-// API Key de BscScan proporcionada por el usuario
-export const BSCSCAN_API_KEY = '58BXDNDG6E6VMHSJJ6MQT4YES7J1F8AFUT'; 
-export const REFRESH_INTERVAL = 30000; 
-export const TRANSACTION_FEE_RATE = 0.0075;
+export const GLDC_TOKEN_ADDRESS = '0x5287178Ad5812Ac7161a8169483d96159A684DF8';
+export const BSCSCAN_API_KEY = '58BXDNDG6E6VMHSJJ6MQT4YES7J1F8AFUT';
+export const FEE_RATE = 0.0075; // 0.75%
+export const ADMIN_WALLET = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
+export const SUPPORT_EMAIL = 'soporte@cryptocagua.com';

@@ -1,8 +1,9 @@
 
-export interface GoldPriceData {
-  paxgPrice: number; // Price per Troy Ounce
-  gldcPrice: number; // Price per Gram
-  lastUpdate: Date;
+export interface GoldState {
+  spotPrice: number; // Precio por onza
+  gramPrice: number; // Precio por gramo (GLDC)
+  change24h: number;
+  loading: boolean;
 }
 
 export interface WalletState {
@@ -12,18 +13,7 @@ export interface WalletState {
   isConnected: boolean;
 }
 
-export interface Transaction {
-  id: string;
-  type: 'BUY' | 'SELL';
-  amountGLDC: number;
-  subtotalUSD: number;
-  feeUSD: number;
-  totalUSD: number;
-  status: 'PENDING' | 'COMPLETED' | 'FAILED';
-  date: Date;
-}
-
 export interface PricePoint {
   time: string;
-  value: number;
+  price: number;
 }
