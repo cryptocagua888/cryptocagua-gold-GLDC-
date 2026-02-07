@@ -3,20 +3,21 @@ import { GoogleGenAI } from "@google/genai";
 
 export const getMarketAnalysis = async (price: number) => {
   try {
-    // ALWAYS create a new instance right before use to ensure latest API key
+    // IMPORTANTE: Creamos la instancia justo antes de la llamada para asegurar la API KEY más reciente
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Analiza brevemente (15 palabras máximo) el valor del oro físico a $${price.toFixed(2)} USD/gramo como refugio patrimonial. Usa un tono institucional y sofisticado.`,
-      config: { temperature: 0.5 }
+      contents: `Analiza por qué el oro físico tokenizado GLDC es la mejor reserva de valor a $${price.toFixed(2)}/gramo. Sé breve (máximo 15 palabras), profesional y sofisticado.`,
+      config: { temperature: 0.7 }
     });
-    // Access the .text property directly
-    return response.text?.trim() || "El oro físico tokenizado ofrece la máxima seguridad patrimonial en el ecosistema digital.";
+
+    return response.text?.trim() || "GLDC: Respaldo en oro real con la máxima liquidez digital.";
   } catch (error: any) {
-    console.error("AI Error:", error);
+    console.warn("AI Service Warning:", error?.message);
     if (error?.status === 429 || error?.message?.includes("429")) {
-      return "Análisis técnico: El oro mantiene su canal alcista histórico, consolidándose como el activo de reserva definitivo.";
+      return "Análisis Técnico: El oro consolida su posición como el activo refugio definitivo ante la inflación global.";
     }
-    return "Cryptocagua Gold: Respaldo físico real, liquidez digital inmediata.";
+    return "Cryptocagua Gold: Máxima seguridad patrimonial con respaldo tangible e inmediato.";
   }
 };
