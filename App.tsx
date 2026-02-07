@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { BrowserProvider, formatUnits } from 'ethers';
+import { formatUnits } from 'ethers';
 import { 
   Wallet, 
   Coins, 
@@ -11,7 +11,6 @@ import {
   Send,
   X,
   AlertCircle,
-  // Fix: Added missing ShieldCheck icon import
   ShieldCheck
 } from 'lucide-react';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
@@ -54,27 +53,32 @@ const App: React.FC = () => {
       const chainId = await eth.request({ method: 'eth_chainId' });
       setWrongNetwork(chainId !== '0x38');
     } catch (e) {
-      console.error(e);
+      console.error("Network check error:", e);
     }
   };
 
   const switchNetwork = async () => {
     const eth = (window as any).ethereum;
+    if (!eth) return;
     try {
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] });
       setWrongNetwork(false);
     } catch (e: any) {
       if (e.code === 4902) {
-        await eth.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: '0x38',
-            chainName: 'Binance Smart Chain',
-            nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-            rpcUrls: ['https://bsc-dataseed.binance.org/'],
-            blockExplorerUrls: ['https://bscscan.com/'],
-          }],
-        });
+        try {
+          await eth.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x38',
+              chainName: 'Binance Smart Chain',
+              nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+              rpcUrls: ['https://bsc-dataseed.binance.org/'],
+              blockExplorerUrls: ['https://bscscan.com/'],
+            }],
+          });
+        } catch (addError) {
+          console.error("Error adding network:", addError);
+        }
       }
     }
   };
@@ -88,9 +92,13 @@ const App: React.FC = () => {
       if (data.status === '1' && data.result) {
         const bal = parseFloat(formatUnits(data.result, 18));
         setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: bal }));
+      } else {
+        // Si no hay balance o error de API, al menos marcar conectado
+        setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: 0 }));
       }
     } catch (e) {
-      console.error(e);
+      console.error("Balance fetch error:", e);
+      setWallet(prev => ({ ...prev, address, isConnected: true }));
     }
   }, []);
 
@@ -107,22 +115,43 @@ const App: React.FC = () => {
         if (wallet.address) fetchWalletBalance(wallet.address);
       }
     } catch (e) { 
-      console.error(e); 
+      console.error("Market data error:", e); 
     } finally { 
       setIsRefreshing(false); 
     }
   }, [wallet.address, fetchWalletBalance]);
 
   const connectWallet = async () => {
+    console.log("Intentando conectar wallet...");
     const eth = (window as any).ethereum;
-    if (!eth) return alert("MetaMask no detectado.");
+    if (!eth) return alert("MetaMask no detectado. Por favor instala la extensión.");
+    
     try {
       const accounts = await eth.request({ method: "eth_requestAccounts" });
-      if (accounts[0]) {
+      if (accounts && accounts[0]) {
+        console.log("Cuenta conectada:", accounts[0]);
+        setWallet(prev => ({ ...prev, address: accounts[0], isConnected: true }));
         await checkNetwork();
         fetchWalletBalance(accounts[0]);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error("Error al conectar wallet:", e); 
+    }
+  };
+
+  const handleOpenAiKey = async () => {
+    console.log("Iniciando selección de llave de IA...");
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      try {
+        await window.aistudio.openSelectKey();
+        fetchMarketData();
+      } catch (e) {
+        console.error("Error al abrir selector de llave:", e);
+      }
+    } else {
+      console.warn("window.aistudio no está disponible en este entorno.");
+      alert("La configuración de la IA está disponible únicamente dentro del entorno de AI Studio.");
+    }
   };
 
   const handleOrderSubmit = () => {
@@ -140,14 +169,19 @@ const App: React.FC = () => {
       time: `${i}:00`,
       price: 77.16 + (Math.random() - 0.5) * 2
     })));
+    
     const eth = (window as any).ethereum;
     if (eth) {
       eth.on('accountsChanged', (accs: string[]) => {
-        if (accs[0]) fetchWalletBalance(accs[0]);
-        else setWallet({ address: null, balanceGLDC: 0, balanceUSD: 0, isConnected: false });
+        if (accs[0]) {
+          fetchWalletBalance(accs[0]);
+        } else {
+          setWallet({ address: null, balanceGLDC: 0, balanceUSD: 0, isConnected: false });
+        }
       });
       eth.on('chainChanged', () => window.location.reload());
     }
+    
     const interval = setInterval(fetchMarketData, 60000);
     return () => clearInterval(interval);
   }, [fetchMarketData, fetchWalletBalance]);
@@ -175,14 +209,14 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <button 
-            onClick={async () => { if (window.aistudio) await window.aistudio.openSelectKey(); fetchMarketData(); }}
+            onClick={handleOpenAiKey}
             className="ia-button-glow flex items-center gap-2 px-5 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-full text-[10px] font-black uppercase transition-all"
           >
             <Key size={14} className="text-yellow-500" /> <span className="hidden xs:inline">IA ANALYST</span>
           </button>
           <button 
             onClick={connectWallet}
-            className={`px-6 py-2.5 rounded-full text-[11px] font-black uppercase flex items-center gap-2 transition-all ${wallet.isConnected ? 'bg-white/5 border border-white/10' : 'gold-gradient text-black shadow-2xl shadow-yellow-500/10'}`}
+            className={`px-6 py-2.5 rounded-full text-[11px] font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${wallet.isConnected ? 'bg-white/5 border border-white/10' : 'gold-gradient text-black shadow-2xl shadow-yellow-500/10 hover:scale-105'}`}
           >
             <Wallet size={16} /> {wallet.isConnected ? `${wallet.address?.slice(0,5)}...${wallet.address?.slice(-4)}` : 'CONECTAR'}
           </button>
@@ -271,7 +305,7 @@ const App: React.FC = () => {
               <button 
                 onClick={() => setShowConfirm(true)}
                 disabled={!wallet.isConnected || parseFloat(orderAmount) <= 0 || wrongNetwork}
-                className={`w-full py-8 rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-3 ${wallet.isConnected && !wrongNetwork && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black shadow-2xl shadow-yellow-500/20' : 'bg-white text-black shadow-2xl shadow-white/20') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
+                className={`w-full py-8 rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-3 cursor-pointer ${wallet.isConnected && !wrongNetwork && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black shadow-2xl shadow-yellow-500/20 hover:scale-[1.02]' : 'bg-white text-black shadow-2xl shadow-white/20 hover:scale-[1.02]') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
               >
                 {orderType === 'BUY' ? 'SOLICITAR ADQUISICIÓN' : 'SOLICITAR LIQUIDACIÓN'}
                 <ChevronRight size={20} />
@@ -287,7 +321,7 @@ const App: React.FC = () => {
       {showConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-3xl bg-black/80 animate-fade-in">
           <div className="glass w-full max-w-xl p-12 rounded-[4rem] border border-yellow-500/30 relative shadow-2xl">
-            <button onClick={() => setShowConfirm(false)} className="absolute top-10 right-10 text-white/20 hover:text-white transition-colors"><X size={32}/></button>
+            <button onClick={() => setShowConfirm(false)} className="absolute top-10 right-10 text-white/20 hover:text-white transition-colors cursor-pointer"><X size={32}/></button>
             <h3 className="text-4xl font-black text-center mb-10 uppercase tracking-tighter">Detalles de la Orden</h3>
             <div className="space-y-8">
               <div className="bg-black p-10 rounded-[3rem] border border-white/5 text-center">
@@ -297,9 +331,9 @@ const App: React.FC = () => {
               <div className="p-10 bg-yellow-500/5 rounded-[3rem] border border-yellow-500/10 text-center">
                 <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">Cuenta de Depósito (BEP20)</p>
                 <code className="text-[11px] break-all block font-mono text-white/60 bg-black/40 p-5 rounded-2xl border border-white/5 mb-8">{ADMIN_WALLET}</code>
-                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Dirección copiada"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all">Copiar Dirección</button>
+                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Dirección copiada"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all cursor-pointer">Copiar Dirección</button>
               </div>
-              <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl">NOTIFICAR TRANSFERENCIA <Send size={20}/></button>
+              <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl cursor-pointer hover:scale-[1.02]">NOTIFICAR TRANSFERENCIA <Send size={20}/></button>
             </div>
           </div>
         </div>
