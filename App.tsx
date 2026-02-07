@@ -46,7 +46,9 @@ const App: React.FC = () => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [wrongNetwork, setWrongNetwork] = useState(false);
 
-  const currentBalanceUSD = useMemo(() => wallet.balanceGLDC * gold.gramPrice, [wallet.balanceGLDC, gold.gramPrice]);
+  const currentBalanceUSD = useMemo(() => {
+    return (wallet.balanceGLDC || 0) * (gold.gramPrice || 77.16);
+  }, [wallet.balanceGLDC, gold.gramPrice]);
 
   const orderDetails = useMemo(() => {
     const qty = parseFloat(orderAmount) || 0;
@@ -105,22 +107,19 @@ const App: React.FC = () => {
           ...prev, 
           address, 
           isConnected: true, 
-          balanceGLDC: bal,
-          balanceUSD: bal * gold.gramPrice
+          balanceGLDC: bal
         }));
       } else {
         setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: 0 }));
       }
     } catch (e) {
       console.error("Balance fetch error:", e);
-      setWallet(prev => ({ ...prev, address, isConnected: true }));
     }
-  }, [gold.gramPrice]);
+  }, []);
 
   const fetchMarketData = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      // Intentar obtener precio real de PAXG (Oro tokenizado)
       const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT');
       const data = await res.json();
       if (data?.price) {
@@ -128,28 +127,27 @@ const App: React.FC = () => {
         const gram = spot / TROY_OUNCE_TO_GRAMS;
         setGold(prev => ({ ...prev, spotPrice: spot, gramPrice: gram, loading: false }));
         
-        // Llamada a la IA para análisis
         getMarketAnalysis(gram).then(setAnalysis).catch(() => {
-          setAnalysis("El oro se mantiene como el activo de reserva definitivo frente a la volatilidad.");
+          setAnalysis("El oro físico tokenizado GLDC ofrece máxima seguridad y respaldo tangible.");
         });
 
-        // Si hay una wallet conectada, actualizar su balance con el nuevo precio
-        if (wallet.address) {
-           fetchWalletBalance(wallet.address);
+        // Actualizar balance si ya hay una dirección
+        const eth = (window as any).ethereum;
+        if (eth && eth.selectedAddress) {
+          fetchWalletBalance(eth.selectedAddress);
         }
       }
     } catch (e) { 
       console.error("Market data error:", e); 
-      setGold(prev => ({ ...prev, loading: false }));
     } finally { 
       setIsRefreshing(false); 
     }
-  }, [wallet.address, fetchWalletBalance]);
+  }, [fetchWalletBalance]);
 
   const connectWallet = async () => {
     const eth = (window as any).ethereum;
     if (!eth) {
-      alert("No se detectó una billetera. Por favor instala MetaMask.");
+      alert("MetaMask no detectado.");
       return;
     }
     
@@ -162,21 +160,19 @@ const App: React.FC = () => {
         fetchWalletBalance(userAddress);
       }
     } catch (e) { 
-      console.error("Error al conectar wallet:", e); 
+      console.error("Connection error:", e); 
     }
   };
 
   const handleOpenAiKey = async () => {
-    const aistudio = (window as any).aistudio;
-    if (aistudio && typeof aistudio.openSelectKey === 'function') {
-      try {
-        await aistudio.openSelectKey();
-        fetchMarketData();
-      } catch (e) {
-        console.error("Error al abrir selector de llave:", e);
-      }
+    // Usar la API oficial de AI Studio según las reglas
+    if ((window as any).aistudio && typeof (window as any).aistudio.openSelectKey === 'function') {
+      await (window as any).aistudio.openSelectKey();
+      // Asumimos éxito e intentamos actualizar la data con la nueva key (que estará en process.env.API_KEY)
+      fetchMarketData();
     } else {
-      alert("La configuración de la llave de IA solo está disponible en el entorno de AI Studio.");
+      // Si no está disponible el objeto, alertar amigablemente
+      alert("Por favor, selecciona una API Key en el panel de AI Studio para activar el análisis.");
     }
   };
 
@@ -191,7 +187,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchMarketData();
-    // Generar historial ficticio inicial
     setHistory(Array.from({ length: 20 }, (_, i) => ({
       time: `${i}:00`,
       price: 77.16 + (Math.random() - 0.5) * 2
@@ -199,8 +194,19 @@ const App: React.FC = () => {
     
     const eth = (window as any).ethereum;
     if (eth) {
+      // Reconectar si ya hay permisos
+      eth.request({ method: 'eth_accounts' }).then((accounts: string[]) => {
+        if (accounts && accounts[0]) {
+          const userAddress = accounts[0];
+          setWallet(prev => ({ ...prev, address: userAddress, isConnected: true }));
+          fetchWalletBalance(userAddress);
+          checkNetwork();
+        }
+      });
+
       eth.on('accountsChanged', (accs: string[]) => {
         if (accs[0]) {
+          setWallet(prev => ({ ...prev, address: accs[0], isConnected: true }));
           fetchWalletBalance(accs[0]);
         } else {
           setWallet({ address: null, balanceGLDC: 0, balanceUSD: 0, isConnected: false });
@@ -219,7 +225,7 @@ const App: React.FC = () => {
         <div className="bg-red-600 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 text-xs font-black sticky top-0 z-[100] border-b border-red-500/50">
           <AlertCircle size={18} className="animate-bounce" />
           <span>RED INCORRECTA: POR FAVOR CONÉCTATE A BINANCE SMART CHAIN</span>
-          <button onClick={switchNetwork} className="bg-white text-red-600 px-6 py-2 rounded-full shadow-xl hover:scale-105 transition-transform">CORREGIR RED</button>
+          <button onClick={switchNetwork} className="bg-white text-red-600 px-6 py-2 rounded-full shadow-xl hover:scale-105 transition-transform">CAMBIAR A BSC</button>
         </div>
       )}
 
@@ -245,7 +251,10 @@ const App: React.FC = () => {
             onClick={connectWallet}
             className={`px-6 py-2.5 rounded-full text-[11px] font-black uppercase flex items-center gap-2 transition-all cursor-pointer ${wallet.isConnected ? 'bg-white/5 border border-white/10' : 'gold-gradient text-black shadow-2xl shadow-yellow-500/10 hover:scale-105'}`}
           >
-            <Wallet size={16} /> {wallet.isConnected ? `${wallet.address?.slice(0,6)}...${wallet.address?.slice(-4)}` : 'CONECTAR WALLET'}
+            <Wallet size={16} /> 
+            {wallet.isConnected && wallet.address 
+              ? `${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}` 
+              : 'CONECTAR WALLET'}
           </button>
         </div>
       </nav>
@@ -358,7 +367,7 @@ const App: React.FC = () => {
               <div className="p-10 bg-yellow-500/5 rounded-[3rem] border border-yellow-500/10 text-center">
                 <p className="text-[10px] font-black uppercase text-white/40 mb-4 tracking-widest">Enviar a (Red BSC)</p>
                 <code className="text-[11px] break-all block font-mono text-white/60 bg-black/40 p-5 rounded-2xl border border-white/5 mb-8">{ADMIN_WALLET}</code>
-                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Copiado al portapapeles"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all cursor-pointer">Copiar Cuenta</button>
+                <button onClick={() => { navigator.clipboard.writeText(ADMIN_WALLET); alert("Dirección copiada"); }} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase border border-white/5 transition-all cursor-pointer">Copiar Cuenta</button>
               </div>
               <button onClick={handleOrderSubmit} className="w-full py-8 gold-gradient text-black rounded-[2.5rem] font-black uppercase text-[12px] tracking-widest flex items-center justify-center gap-4 shadow-2xl cursor-pointer hover:scale-[1.02]">NOTIFICAR PAGO <Send size={20}/></button>
             </div>
