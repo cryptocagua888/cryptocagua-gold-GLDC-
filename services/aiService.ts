@@ -3,12 +3,14 @@ import { GoogleGenAI } from "@google/genai";
 
 export const getMarketAnalysis = async (price: number) => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+    // ALWAYS create a new instance right before use to ensure latest API key
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Analiza brevemente (15 palabras máximo) el valor del oro físico a $${price.toFixed(2)} USD/gramo como refugio patrimonial. Usa un tono institucional y sofisticado.`,
       config: { temperature: 0.5 }
     });
+    // Access the .text property directly
     return response.text?.trim() || "El oro físico tokenizado ofrece la máxima seguridad patrimonial en el ecosistema digital.";
   } catch (error: any) {
     console.error("AI Error:", error);
