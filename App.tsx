@@ -16,7 +16,10 @@ import {
   Copy,
   CheckCircle2,
   ArrowRightLeft,
-  Info
+  Info,
+  Hash,
+  User,
+  ExternalLink
 } from 'lucide-react';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
 import { GoldState, WalletState, PricePoint } from './types';
@@ -54,11 +57,18 @@ const App: React.FC = () => {
     balanceUSD: 0, 
     isConnected: false 
   });
-  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
-  const [history, setHistory] = useState<PricePoint[]>([]);
-  const [analysis, setAnalysis] = useState<string>("Conectando con la reserva de oro física...");
+  
+  // Estados para la orden
   const [orderAmount, setOrderAmount] = useState<string>("");
   const [orderType, setOrderType] = useState<'BUY' | 'SELL'>('BUY');
+  const [txId, setTxId] = useState("");
+  const [isDifferentWallet, setIsDifferentWallet] = useState(false);
+  const [externalAddress, setExternalAddress] = useState("");
+  
+  // UI States
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  const [history, setHistory] = useState<PricePoint[]>([]);
+  const [analysis, setAnalysis] = useState("Conectando con la reserva de oro física...");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [wrongNetwork, setWrongNetwork] = useState(false);
@@ -115,20 +125,14 @@ const App: React.FC = () => {
           }));
           if (!isSilent) setIsLoadingBalance(false);
           return;
-        } catch (e) {
-          console.warn("MetaMask fallback...");
-        }
+        } catch (e) { console.warn("Balance fetch error:", e); }
       }
-
       for (const rpc of BSC_NODES) {
         try {
           const provider = new JsonRpcProvider(rpc);
           const contract = new Contract(GLDC_TOKEN_ADDRESS, ERC20_ABI, provider);
-          const [rawBalance, decimals] = await Promise.all([
-            contract.balanceOf(address),
-            contract.decimals().catch(() => 18)
-          ]);
-          const balFormatted = parseFloat(formatUnits(rawBalance, decimals));
+          const rawBalance = await contract.balanceOf(address);
+          const balFormatted = parseFloat(formatUnits(rawBalance, 18));
           setWallet(prev => ({ ...prev, address, isConnected: true, balanceGLDC: balFormatted, balanceUSD: balFormatted * gold.gramPrice }));
           if (!isSilent) setIsLoadingBalance(false);
           return;
@@ -173,10 +177,12 @@ const App: React.FC = () => {
   };
 
   const handleNotify = () => {
-    const subject = `ORDEN GLDC: ${orderType} ${orderDetails.amount}g`;
+    const walletToUse = isDifferentWallet ? externalAddress : wallet.address;
+    const subject = `ORDEN GLDC: ${orderType} ${orderDetails.amount}g - HASH: ${txId.slice(0, 8)}`;
     const body = `DETALLE DE SOLICITUD - CRYPTOCAGUA GOLD
 ------------------------------------------------
 Operación: ${orderType === 'BUY' ? 'ADQUISICIÓN (Compra)' : 'LIQUIDACIÓN (Venta)'}
+Hash de Transacción (TxID): ${txId}
 ------------------------------------------------
 Monto Solicitado: ${orderDetails.amount} g
 Comisión de Red (0.75%): -${orderDetails.feeInTokens.toFixed(6)} g
@@ -185,12 +191,13 @@ Monto Neto en Oro: ${orderDetails.netTokens.toFixed(6)} g
 Precio de Referencia: $${orderDetails.gramPrice.toFixed(4)} USDT/g
 TOTAL EN USDT: $${orderDetails.finalUSDT.toFixed(2)} USDT
 ------------------------------------------------
-Billetera Usuario: ${wallet.address}
-Billetera Tesorería: ${TREASURY_WALLET}
+Billetera Conectada: ${wallet.address}
+Billetera Destino/Origen: ${walletToUse}
+Billetera Tesorería (Destino Pago): ${TREASURY_WALLET}
 ------------------------------------------------
 ${orderType === 'BUY' 
-  ? 'Nota: He enviado el pago en USDT por el total. Espero recibir el monto neto en GLDC.' 
-  : 'Nota: Deseo liquidar mis tokens GLDC por su valor neto en USDT.'}`;
+  ? 'Nota: He enviado el pago en USDT por el total. Solicito el envío de los tokens GLDC a la dirección indicada.' 
+  : 'Nota: He enviado los tokens GLDC a tesorería. Solicito la liquidación en USDT a mi billetera.'}`;
     
     window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     setShowConfirm(false);
@@ -204,18 +211,20 @@ ${orderType === 'BUY'
     })));
   }, [fetchMarketData]);
 
+  // Validación de formulario
+  const isFormValid = useMemo(() => {
+    const hasTx = txId.length > 20;
+    const hasAddress = isDifferentWallet ? (externalAddress.startsWith("0x") && externalAddress.length === 42) : true;
+    return hasTx && hasAddress;
+  }, [txId, isDifferentWallet, externalAddress]);
+
   return (
     <div className="min-h-screen pb-10 sm:pb-20">
       {wrongNetwork && wallet.isConnected && (
         <div className="bg-red-600 text-white px-4 py-3 flex flex-wrap items-center justify-center gap-2 text-[9px] font-black sticky top-0 z-[100] shadow-2xl">
           <AlertCircle size={14} className="animate-pulse" />
           <span className="tracking-widest uppercase">Red Incorrecta. Cambia a BSC.</span>
-          <button 
-            onClick={() => (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] })}
-            className="bg-white text-red-600 px-3 py-1 rounded-full hover:scale-105 text-[8px]"
-          >
-            Sincronizar BSC
-          </button>
+          <button onClick={() => (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] })} className="bg-white text-red-600 px-3 py-1 rounded-full hover:scale-105 text-[8px]">Sincronizar BSC</button>
         </div>
       )}
 
@@ -230,16 +239,9 @@ ${orderType === 'BUY'
           </div>
         </div>
 
-        <button 
-          onClick={connectWallet}
-          className={`px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl text-[8px] sm:text-[10px] font-black uppercase flex items-center gap-2 transition-all active:scale-95 ${wallet.isConnected && wallet.address ? 'bg-white/5 border border-white/10 text-white/60' : 'gold-gradient text-black shadow-lg hover:shadow-yellow-500/20'}`}
-        >
+        <button onClick={connectWallet} className={`px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl text-[8px] sm:text-[10px] font-black uppercase flex items-center gap-2 transition-all active:scale-95 ${wallet.isConnected && wallet.address ? 'bg-white/5 border border-white/10 text-white/60' : 'gold-gradient text-black shadow-lg hover:shadow-yellow-500/20'}`}>
           <Wallet size={16} /> 
-          <span className="hidden xs:inline">
-            {wallet.isConnected && wallet.address ? `${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}` : 'Wallet'}
-          </span>
-          {!wallet.isConnected && <span className="xs:hidden">Conectar</span>}
-          {wallet.isConnected && wallet.address && <span className="xs:hidden">{wallet.address.slice(-4)}</span>}
+          <span>{wallet.isConnected && wallet.address ? `${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}` : 'Wallet'}</span>
         </button>
       </nav>
 
@@ -310,20 +312,10 @@ ${orderType === 'BUY'
             
             <div className="text-center space-y-4 sm:space-y-6">
               <label className="text-[8px] sm:text-[10px] font-black uppercase text-white/20 tracking-[0.3em] sm:tracking-[0.5em]">Gramos a transar</label>
-              <input 
-                type="number" 
-                value={orderAmount} 
-                onChange={(e) => setOrderAmount(e.target.value)} 
-                placeholder="0.00" 
-                className="w-full bg-black/60 border border-white/5 rounded-[2rem] sm:rounded-[3rem] py-8 sm:py-14 text-4xl sm:text-6xl lg:text-7xl font-black text-center outline-none focus:border-yellow-500/40 transition-all placeholder:text-white/5 px-4" 
-              />
+              <input type="number" value={orderAmount} onChange={(e) => setOrderAmount(e.target.value)} placeholder="0.00" className="w-full bg-black/60 border border-white/5 rounded-[2rem] sm:rounded-[3rem] py-8 sm:py-14 text-4xl sm:text-6xl lg:text-7xl font-black text-center outline-none focus:border-yellow-500/40 transition-all placeholder:text-white/5 px-4" />
             </div>
 
-            <button 
-              onClick={() => setShowConfirm(true)}
-              disabled={!wallet.isConnected || !orderAmount || parseFloat(orderAmount) <= 0 || wrongNetwork || isLoadingBalance}
-              className={`w-full py-6 sm:py-10 rounded-[2rem] sm:rounded-[3rem] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] sm:tracking-[0.3em] transition-all active:scale-[0.96] flex items-center justify-center gap-2 sm:gap-4 shadow-2xl ${wallet.isConnected && !wrongNetwork && orderAmount && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black hover:scale-[1.03]' : 'bg-white text-black hover:scale-[1.03]') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
-            >
+            <button onClick={() => setShowConfirm(true)} disabled={!wallet.isConnected || !orderAmount || parseFloat(orderAmount) <= 0 || wrongNetwork || isLoadingBalance} className={`w-full py-6 sm:py-10 rounded-[2rem] sm:rounded-[3rem] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] sm:tracking-[0.3em] transition-all active:scale-[0.96] flex items-center justify-center gap-2 sm:gap-4 shadow-2xl ${wallet.isConnected && !wrongNetwork && orderAmount && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black hover:scale-[1.03]' : 'bg-white text-black hover:scale-[1.03]') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}>
               {orderType === 'BUY' ? 'Crear Reserva' : 'Canjear Oro'}
               <ChevronRight size={18} className="sm:size-6" />
             </button>
@@ -333,86 +325,89 @@ ${orderType === 'BUY'
 
       {showConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 backdrop-blur-3xl bg-black/95">
-          <div className="glass w-full max-w-2xl p-6 sm:p-16 rounded-[2.5rem] sm:rounded-[5rem] border border-yellow-500/20 relative shadow-gold-lg animate-in fade-in zoom-in duration-300 max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setShowConfirm(false)} className="absolute top-6 right-6 sm:top-12 sm:right-12 text-white/20 hover:text-white transition-all"><X size={24} className="sm:size-8"/></button>
+          <div className="glass w-full max-w-2xl p-6 sm:p-12 rounded-[2.5rem] sm:rounded-[4rem] border border-yellow-500/20 relative shadow-gold-lg animate-in fade-in zoom-in duration-300 max-h-[95vh] overflow-y-auto overflow-x-hidden">
+            <button onClick={() => setShowConfirm(false)} className="absolute top-6 right-6 sm:top-10 sm:right-10 text-white/20 hover:text-white transition-all"><X size={24} className="sm:size-8"/></button>
             
-            <div className="text-center mb-6 sm:mb-8 mt-4 sm:mt-0">
-              <h3 className="text-2xl sm:text-4xl font-black uppercase tracking-tighter mb-1 sm:mb-2 leading-tight">Resumen de {orderType === 'BUY' ? 'Adquisición' : 'Liquidación'}</h3>
-              <p className="text-[7px] sm:text-[10px] font-bold text-yellow-500/50 uppercase tracking-[0.2em] sm:tracking-[0.4em]">Cálculo neto de reserva física</p>
+            <div className="text-center mb-6">
+              <h3 className="text-xl sm:text-3xl font-black uppercase tracking-tighter mb-1 leading-tight">Finalizar Operación</h3>
+              <p className="text-[7px] sm:text-[9px] font-bold text-yellow-500/50 uppercase tracking-[0.3em]">Confirma los detalles de tu transacción</p>
             </div>
 
-            <div className="space-y-4 sm:space-y-6">
-              <div className="bg-black/60 rounded-[2rem] sm:rounded-[3rem] border border-white/5 overflow-hidden">
-                <div className="p-5 sm:p-8 border-b border-white/5">
-                  <div className="flex justify-between items-center text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-white/20 mb-4 sm:mb-6">
-                    <span>Gramos</span>
-                    <span>Peso Oro</span>
+            <div className="space-y-6">
+              {/* Resumen Económico */}
+              <div className="bg-white/5 rounded-[2rem] border border-white/5 p-6 sm:p-8">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[8px] font-black text-white/20 uppercase mb-1">Monto Neto</p>
+                    <p className="text-lg sm:text-2xl font-black text-yellow-500">{orderDetails.netTokens.toFixed(6)} <span className="text-[10px] opacity-40">g</span></p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-black text-white/20 uppercase mb-1">{orderType === 'BUY' ? 'Total USDT' : 'Recibes USDT'}</p>
+                    <p className="text-lg sm:text-2xl font-black text-white">${orderDetails.finalUSDT.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Instrucción de Pago */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center px-4">
+                  <p className="text-[8px] font-black text-white/20 uppercase tracking-widest">1. Envía a Tesorería</p>
+                  <span className="text-[7px] font-black text-yellow-500/60 uppercase">USDT (BEP-20)</span>
+                </div>
+                <div className="bg-black/60 p-4 rounded-2xl border border-white/10 flex items-center justify-between gap-3 group hover:border-yellow-500/30 transition-all cursor-pointer shadow-inner" onClick={() => copyToClipboard(TREASURY_WALLET)}>
+                  <code className="text-[9px] sm:text-xs font-mono text-white/50 break-all select-all flex-1 leading-tight">{TREASURY_WALLET}</code>
+                  <div className="shrink-0 p-2 bg-white/5 rounded-lg group-hover:bg-yellow-500 transition-all group-hover:text-black">
+                    {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                  </div>
+                </div>
+              </div>
+
+              {/* Formulario de Validación */}
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-[8px] font-black text-white/40 uppercase px-4"><Hash size={10}/> Hash de Transacción (TxID)</label>
+                  <input 
+                    type="text" 
+                    value={txId} 
+                    onChange={(e) => setTxId(e.target.value)} 
+                    placeholder="Pega aquí el hash de la operación..." 
+                    className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-6 text-xs sm:text-sm font-mono text-yellow-500 outline-none focus:border-yellow-500/40 transition-all placeholder:text-white/10"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="flex items-center gap-2 text-[8px] font-black text-white/40 uppercase px-4"><User size={10}/> Origen / Destino de Fondos</p>
+                  <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-white/5">
+                    <button onClick={() => setIsDifferentWallet(false)} className={`flex-1 py-3 rounded-xl text-[8px] font-black uppercase transition-all ${!isDifferentWallet ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/30'}`}>Mi Billetera Conectada</button>
+                    <button onClick={() => setIsDifferentWallet(true)} className={`flex-1 py-3 rounded-xl text-[8px] font-black uppercase transition-all ${isDifferentWallet ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/30'}`}>Otra Billetera</button>
                   </div>
                   
-                  <div className="space-y-3 sm:space-y-5">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <Coins size={14} className="text-white/40 hidden xs:block" />
-                        <span className="text-[10px] sm:text-sm font-medium text-white/60">Solicitado</span>
-                      </div>
-                      <span className="text-sm sm:text-lg font-bold">{orderDetails.amount.toFixed(4)} g</span>
+                  {isDifferentWallet && (
+                    <div className="animate-in slide-in-from-top-2 duration-300">
+                      <label className="flex items-center gap-2 text-[8px] font-black text-yellow-500/40 uppercase px-4 mb-2"><ExternalLink size={10}/> Dirección para recibir {orderType === 'BUY' ? 'GLDC' : 'USDT'}</label>
+                      <input 
+                        type="text" 
+                        value={externalAddress} 
+                        onChange={(e) => setExternalAddress(e.target.value)} 
+                        placeholder="0x..." 
+                        className="w-full bg-black/40 border border-yellow-500/10 rounded-2xl py-4 px-6 text-xs sm:text-sm font-mono text-white outline-none focus:border-yellow-500/40 transition-all placeholder:text-white/10"
+                      />
                     </div>
-
-                    <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <ArrowRightLeft size={14} className="text-yellow-500/60 hidden xs:block" />
-                        <div>
-                          <span className="text-[10px] sm:text-sm font-medium text-yellow-500/80 block leading-none">Comisión GLDC</span>
-                          <span className="text-[7px] sm:text-[9px] text-yellow-500/30 uppercase font-black tracking-wider">(0.75%)</span>
-                        </div>
-                      </div>
-                      <span className="text-sm sm:text-lg font-bold text-yellow-500">-{orderDetails.feeInTokens.toFixed(6)} g</span>
-                    </div>
-
-                    <div className="flex justify-between items-center p-3 sm:p-4 bg-white/5 rounded-xl sm:rounded-2xl border border-white/5">
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <ShieldCheck size={14} className="text-green-500/60 hidden xs:block" />
-                        <span className="text-[8px] sm:text-xs font-black uppercase tracking-widest text-white/40">
-                          Neto
-                        </span>
-                      </div>
-                      <span className="text-base sm:text-xl font-black text-white">{orderDetails.netTokens.toFixed(6)} g</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-6 sm:p-8 bg-yellow-500/5 text-center">
-                  <p className="text-[8px] sm:text-[10px] font-black text-yellow-500/60 uppercase mb-1 sm:mb-2 tracking-[0.2em] sm:tracking-[0.3em]">
-                    {orderType === 'BUY' ? 'USDT a Transferir' : 'USDT a Recibir'}
-                  </p>
-                  <h4 className="text-3xl sm:text-6xl font-black tracking-tighter text-white truncate px-2">
-                    ${orderDetails.finalUSDT.toLocaleString(undefined, {minimumFractionDigits: 2})} <span className="text-sm sm:text-xl opacity-20">USDT</span>
-                  </h4>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-2 sm:space-y-4">
-                <div className="flex justify-between items-center px-2 sm:px-4">
-                  <p className="text-[8px] sm:text-[10px] font-black text-white/20 uppercase tracking-[0.2em] sm:tracking-[0.3em]">Billetera de Tesorería</p>
-                  <div className="flex items-center gap-1 text-[7px] sm:text-[9px] text-yellow-500/60 font-black uppercase"><Info size={8}/><span className="hidden xs:inline">Verificada</span></div>
-                </div>
-                <div className="bg-black/80 p-3 sm:p-5 rounded-2xl sm:rounded-3xl border border-white/10 flex items-center justify-between gap-3 group hover:border-yellow-500/30 transition-all cursor-pointer shadow-inner" onClick={() => copyToClipboard(TREASURY_WALLET)}>
-                  <code className="text-[8px] sm:text-xs font-mono text-white/60 break-all select-all flex-1 leading-tight">{TREASURY_WALLET}</code>
-                  <div className="shrink-0 p-2 sm:p-3 bg-white/5 rounded-lg sm:rounded-xl group-hover:bg-yellow-500 transition-all group-hover:text-black">
-                    {copied ? <CheckCircle2 size={14} className="sm:size-4" /> : <Copy size={14} className="sm:size-4" />}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 sm:pt-4">
+              {/* Botón de Acción */}
+              <div className="pt-4">
                 <button 
                   onClick={handleNotify} 
-                  className="w-full py-6 sm:py-10 gold-gradient text-black rounded-[1.5rem] sm:rounded-[3rem] font-black uppercase text-[10px] sm:text-[13px] tracking-[0.2em] sm:tracking-[0.3em] flex items-center justify-center gap-3 sm:gap-5 shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all"
+                  disabled={!isFormValid}
+                  className={`w-full py-6 rounded-[2rem] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] flex items-center justify-center gap-4 shadow-2xl transition-all ${isFormValid ? 'gold-gradient text-black hover:scale-[1.02] active:scale-[0.98]' : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
                 >
-                  Confirmar <span className="hidden xs:inline">Notificación</span> <Send size={18} className="sm:size-6"/>
+                  Confirmar y Notificar <Send size={20}/>
                 </button>
-                <p className="text-[7px] sm:text-[9px] text-center text-white/20 font-black uppercase tracking-[0.1em] sm:tracking-[0.2em] mt-4 sm:mt-6 leading-relaxed max-w-[200px] sm:max-w-xs mx-auto">
-                  La comisión se aplica sobre el peso en oro por gestión de custodia física.
+                <p className="text-[7px] sm:text-[9px] text-center text-white/20 font-black uppercase tracking-[0.1em] mt-6 leading-relaxed max-w-xs mx-auto">
+                  Al confirmar, se abrirá tu gestor de correo con los datos de la operación para validación manual por tesorería.
                 </p>
               </div>
             </div>
