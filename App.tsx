@@ -25,7 +25,9 @@ import {
   BookOpen,
   ArrowRight,
   Shield,
-  TrendingUp
+  TrendingUp,
+  Globe,
+  Zap
 } from 'lucide-react';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
 import { GoldState, WalletState, PricePoint } from './types';
@@ -88,8 +90,6 @@ const App: React.FC = () => {
     const feeInTokens = amount * FEE_RATE;
     const netTokens = amount - feeInTokens;
     
-    // Si compra: paga el 100% en USDT, recibe el 99.25% en GLDC
-    // Si vende: envía el 100% en GLDC, recibe el valor USDT del 99.25%
     const finalUSDT = orderType === 'BUY' 
       ? amount * gold.gramPrice 
       : netTokens * gold.gramPrice;
@@ -181,13 +181,14 @@ const App: React.FC = () => {
 
   const handleNotify = () => {
     const walletToUse = isDifferentWallet ? externalAddress : wallet.address;
-    const subject = `ORDEN GLDC: ${orderType} ${orderDetails.amount}g - HASH: ${txId.slice(0, 8)}`;
-    const body = `DETALLE DE SOLICITUD - CRYPTOCAGUA GOLD
+    const subject = `ORDEN GLDC (BSC): ${orderType} ${orderDetails.amount}g - HASH: ${txId.slice(0, 8)}`;
+    const body = `DETALLE DE SOLICITUD - CRYPTOCAGUA GOLD (BSC NETWORK)
 ------------------------------------------------
 Operación: ${orderType === 'BUY' ? 'ADQUISICIÓN (Compra)' : 'LIQUIDACIÓN (Venta)'}
+Red: Binance Smart Chain (BEP-20)
 Hash de Transacción (TxID): ${txId}
 ------------------------------------------------
-Monto en Transacción: ${orderDetails.amount} ${orderType === 'BUY' ? 'USDT (equivalente en oro)' : 'GLDC'}
+Monto en Transacción: ${orderDetails.amount} ${orderType === 'BUY' ? 'USDT (BEP-20)' : 'GLDC (BEP-20)'}
 Comisión Aplicada (0.75%): -${orderDetails.feeInTokens.toFixed(6)} g (Deducida en Oro)
 Monto Neto Final: ${orderDetails.netTokens.toFixed(6)} g
 ------------------------------------------------
@@ -199,8 +200,8 @@ Billetera Destino/Origen Fondos: ${walletToUse}
 Billetera Tesorería Cryptocagua: ${TREASURY_WALLET}
 ------------------------------------------------
 ${orderType === 'BUY' 
-  ? `Nota: He enviado ${orderDetails.finalUSDT.toFixed(2)} USDT. Solicito el envío de mis tokens GLDC (neto tras comisión) a mi billetera.` 
-  : `Nota: He enviado ${orderDetails.amount} tokens GLDC. Solicito la liquidación de ${orderDetails.netTokens.toFixed(6)} g en USDT ($${orderDetails.finalUSDT.toFixed(2)}).`}`;
+  ? `Nota: He enviado ${orderDetails.finalUSDT.toFixed(2)} USDT por la red BSC. Solicito el envío de mis tokens GLDC (neto tras comisión) a mi billetera.` 
+  : `Nota: He enviado ${orderDetails.amount} tokens GLDC por la red BSC. Solicito la liquidación de ${orderDetails.netTokens.toFixed(6)} g en USDT ($${orderDetails.finalUSDT.toFixed(2)}).`}`;
     
     window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     setShowConfirm(false);
@@ -225,7 +226,7 @@ ${orderType === 'BUY'
       {wrongNetwork && wallet.isConnected && (
         <div className="bg-red-600 text-white px-4 py-3 flex flex-wrap items-center justify-center gap-2 text-[9px] font-black sticky top-0 z-[100] shadow-2xl text-center">
           <AlertCircle size={14} className="animate-pulse" />
-          <span className="tracking-widest uppercase">Red Incorrecta. Cambia a BSC para operar.</span>
+          <span className="tracking-widest uppercase">Red Incorrecta. Cambia a Binance Smart Chain (BSC) para operar.</span>
           <button onClick={() => (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] })} className="bg-white text-red-600 px-3 py-1 rounded-full hover:scale-105 text-[8px] font-bold">Cambiar a BSC</button>
         </div>
       )}
@@ -235,16 +236,23 @@ ${orderType === 'BUY'
           <div className="w-10 h-10 sm:w-12 sm:h-12 gold-gradient rounded-xl sm:rounded-2xl flex items-center justify-center shadow-gold transition-transform hover:scale-110">
             <Coins className="text-black" size={24} />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="font-serif text-xl sm:text-3xl font-black tracking-tighter leading-none uppercase">Cryptocagua</h1>
             <p className="text-[7px] sm:text-[9px] font-black text-yellow-500/70 uppercase tracking-[0.3em] sm:tracking-[0.5em] mt-0.5 sm:mt-1">Token de Oro Físico</p>
           </div>
         </div>
 
-        <button onClick={connectWallet} className={`px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl text-[8px] sm:text-[10px] font-black uppercase flex items-center gap-2 transition-all active:scale-95 ${wallet.isConnected && wallet.address ? 'bg-white/5 border border-white/10 text-white/60' : 'gold-gradient text-black shadow-lg hover:shadow-yellow-500/20'}`}>
-          <Wallet size={16} /> 
-          <span>{wallet.isConnected && wallet.address ? `${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}` : 'Conectar Wallet'}</span>
-        </button>
+        <div className="flex items-center gap-4 sm:gap-6">
+          <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-full">
+            <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.8)]"></div>
+            <span className="text-[9px] font-black uppercase text-yellow-500 tracking-widest">Network: BSC (BEP-20)</span>
+          </div>
+
+          <button onClick={connectWallet} className={`px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl text-[8px] sm:text-[10px] font-black uppercase flex items-center gap-2 transition-all active:scale-95 ${wallet.isConnected && wallet.address ? 'bg-white/5 border border-white/10 text-white/60' : 'gold-gradient text-black shadow-lg hover:shadow-yellow-500/20'}`}>
+            <Wallet size={16} /> 
+            <span>{wallet.isConnected && wallet.address ? `${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}` : 'Conectar Wallet'}</span>
+          </button>
+        </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-12 mt-8 sm:mt-12 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-10">
@@ -283,6 +291,7 @@ ${orderType === 'BUY'
 
         <div className="lg:col-span-4 space-y-6 sm:space-y-10">
           <div className="gold-gradient p-8 sm:p-12 rounded-[3rem] sm:rounded-[4.5rem] text-black shadow-gold-lg relative overflow-hidden transition-all hover:scale-[1.01]">
+            <div className="absolute top-4 right-4 bg-black/20 px-3 py-1 rounded-full text-[7px] font-black uppercase tracking-widest border border-black/5">BSC Network</div>
             <div className="relative z-10">
               <div className="flex justify-between items-start mb-4">
                 <p className="text-[9px] sm:text-[11px] font-black uppercase opacity-60 tracking-widest">Reserva GLDC</p>
@@ -314,8 +323,8 @@ ${orderType === 'BUY'
             {parseFloat(orderAmount) > 0 && (
               <div className="bg-white/[0.02] border border-white/5 p-6 rounded-3xl space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-white/40">
-                  <span className="flex items-center gap-2"><Calculator size={12}/> {orderType === 'BUY' ? 'Cálculo de Adquisición' : 'Cálculo de Liquidación'}</span>
-                  <span className="text-yellow-500">GLDC</span>
+                  <span className="flex items-center gap-2"><Calculator size={12}/> Resumen (RED BSC)</span>
+                  <span className="text-yellow-500 font-bold">BEP-20</span>
                 </div>
                 
                 <div className="space-y-2.5">
@@ -328,7 +337,7 @@ ${orderType === 'BUY'
                     <span className="text-yellow-500">-{orderDetails.feeInTokens.toFixed(6)} g</span>
                   </div>
                   <div className="flex justify-between text-[13px] font-black pt-1">
-                    <span className="text-white/50 uppercase text-[9px] tracking-widest">Neto Resultante:</span>
+                    <span className="text-white/50 uppercase text-[9px] tracking-widest">Resultado Final:</span>
                     <span className="gold-text">{orderDetails.netTokens.toFixed(4)} g</span>
                   </div>
                 </div>
@@ -336,7 +345,7 @@ ${orderType === 'BUY'
             )}
 
             <button onClick={() => setShowConfirm(true)} disabled={!wallet.isConnected || !orderAmount || parseFloat(orderAmount) <= 0 || wrongNetwork || isLoadingBalance} className={`w-full py-6 sm:py-10 rounded-[2rem] sm:rounded-[3rem] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] sm:tracking-[0.3em] transition-all active:scale-[0.96] flex items-center justify-center gap-2 sm:gap-4 shadow-2xl ${wallet.isConnected && !wrongNetwork && orderAmount && parseFloat(orderAmount) > 0 ? (orderType === 'BUY' ? 'gold-gradient text-black hover:scale-[1.03]' : 'bg-white text-black hover:scale-[1.03]') : 'bg-white/5 text-white/10 cursor-not-allowed'}`}>
-              {orderType === 'BUY' ? 'Solicitar Reserva' : 'Iniciar Liquidación'}
+              {orderType === 'BUY' ? 'Iniciar Adquisición' : 'Iniciar Liquidación'}
               <ChevronRight size={18} className="sm:size-6" />
             </button>
           </div>
@@ -349,118 +358,122 @@ ${orderType === 'BUY'
             <button onClick={() => setShowConfirm(false)} className="absolute top-6 right-6 sm:top-10 sm:right-10 text-white/20 hover:text-white transition-all"><X size={24} className="sm:size-8"/></button>
             
             <div className="text-center mb-8">
-              <div className="w-14 h-14 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-yellow-500/20 shadow-inner">
-                {orderType === 'BUY' ? <TrendingUp className="text-yellow-500" size={30} /> : <ArrowRightLeft className="text-yellow-500" size={30} />}
+              <div className="w-16 h-16 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-yellow-500/20 shadow-inner">
+                <Zap className="text-yellow-500 fill-yellow-500/20" size={32} />
               </div>
               <h3 className="text-xl sm:text-3xl font-black uppercase tracking-tighter mb-1">
-                {orderType === 'BUY' ? 'Confirmar Compra' : 'Confirmar Venta'}
+                Operación en Red BSC
               </h3>
+              <p className="text-[7px] font-black text-yellow-500 uppercase tracking-[0.2em] mb-4">Protocolo BEP-20 Verificado</p>
               <button 
                 onClick={() => setShowTutorial(!showTutorial)} 
-                className="text-[8px] font-black text-yellow-500/70 hover:text-yellow-500 uppercase flex items-center gap-2 mx-auto mt-2 transition-all"
+                className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-full text-[8px] font-black text-white uppercase flex items-center gap-2 mx-auto transition-all border border-white/5"
               >
-                <BookOpen size={12}/> {showTutorial ? 'Cerrar Tutorial' : '¿Cómo transferir? Ver Tutorial'}
+                <BookOpen size={12}/> {showTutorial ? 'Ocultar Tutorial' : '¿Cómo transferir en BSC?'}
               </button>
             </div>
 
             {showTutorial && (
-              <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-6 mb-8 space-y-6 animate-in slide-in-from-top-4 duration-500">
+              <div className="bg-yellow-500/[0.03] border border-yellow-500/10 rounded-3xl p-6 mb-8 space-y-6 animate-in slide-in-from-top-4 duration-500">
                 <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                  <div className="p-2 bg-yellow-500 rounded-lg text-black"><HelpCircle size={16}/></div>
-                  <h4 className="text-[10px] font-black uppercase tracking-widest">Tutorial de Operación</h4>
+                  <div className="p-2 bg-yellow-500 rounded-lg text-black"><Globe size={16}/></div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest">Guía Crítica: Red BEP-20</h4>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-3 p-4 bg-black/40 rounded-2xl border border-white/5 relative group">
+                  <div className="space-y-3 p-4 bg-black/60 rounded-2xl border border-white/5 relative group">
                     <span className="absolute -top-2 -left-2 w-6 h-6 bg-yellow-500 text-black rounded-full flex items-center justify-center text-[10px] font-black">1</span>
-                    <p className="text-[9px] font-bold text-white/60 leading-relaxed uppercase">
-                      Envía {orderType === 'BUY' ? `USDT` : `${orderDetails.amount} GLDC`} a la dirección de Tesorería.
+                    <p className="text-[8px] font-bold text-white/50 leading-relaxed uppercase">
+                      Selecciona la red <span className="text-yellow-500">BNB Smart Chain (BEP20)</span> en tu billetera.
                     </p>
                   </div>
-                  <div className="space-y-3 p-4 bg-black/40 rounded-2xl border border-white/5 relative group">
+                  <div className="space-y-3 p-4 bg-black/60 rounded-2xl border border-white/5 relative group">
                     <span className="absolute -top-2 -left-2 w-6 h-6 bg-yellow-500 text-black rounded-full flex items-center justify-center text-[10px] font-black">2</span>
-                    <p className="text-[9px] font-bold text-white/60 leading-relaxed uppercase">
-                      Copia el TxID (Hash) desde tu billetera o explorador.
+                    <p className="text-[8px] font-bold text-white/50 leading-relaxed uppercase">
+                      Envía los {orderType === 'BUY' ? `USDT` : `GLDC`} a la dirección de tesorería indicada.
                     </p>
                   </div>
-                  <div className="space-y-3 p-4 bg-black/40 rounded-2xl border border-white/5 relative group">
+                  <div className="space-y-3 p-4 bg-black/60 rounded-2xl border border-white/5 relative group">
                     <span className="absolute -top-2 -left-2 w-6 h-6 bg-yellow-500 text-black rounded-full flex items-center justify-center text-[10px] font-black">3</span>
-                    <p className="text-[9px] font-bold text-white/60 leading-relaxed uppercase">
-                      Pega el TxID abajo y pulsa Notificar para validar.
+                    <p className="text-[8px] font-bold text-white/50 leading-relaxed uppercase">
+                      Pega el <span className="text-white">Transaction Hash</span> para validar la llegada.
                     </p>
                   </div>
+                </div>
+                
+                <div className="flex items-center gap-3 p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+                  <AlertCircle size={14} className="text-red-500 shrink-0" />
+                  <p className="text-[7px] font-black text-red-500 uppercase tracking-wider">No envíes fondos por Ethereum (ERC20) o Tron (TRC20). Solo BSC es compatible.</p>
                 </div>
               </div>
             )}
 
             <div className="space-y-6">
-              {/* Desglose Matemático */}
               <div className="bg-white/5 rounded-[2rem] border border-white/5 p-6 sm:p-8 space-y-6">
                 <div className="grid grid-cols-2 gap-y-4">
                   <div>
-                    <p className="text-[8px] font-black text-white/20 uppercase mb-1">Monto Base</p>
+                    <p className="text-[8px] font-black text-white/20 uppercase mb-1 tracking-widest">Base de Operación</p>
                     <p className="text-xl font-bold text-white">{orderDetails.amount} <span className="text-[10px] opacity-40">g</span></p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[8px] font-black text-white/20 uppercase mb-1">Comisión (0.75%)</p>
+                    <p className="text-[8px] font-black text-white/20 uppercase mb-1 tracking-widest">Fee Custodia (0.75%)</p>
                     <p className="text-xl font-bold text-yellow-500">-{orderDetails.feeInTokens.toFixed(6)} <span className="text-[10px] opacity-40">g</span></p>
                   </div>
                   <div className="col-span-2 border-t border-white/5 pt-4 flex justify-between items-center">
                     <div>
-                      <p className="text-[8px] font-black text-white/20 uppercase mb-1">Monto Neto en Oro</p>
+                      <p className="text-[8px] font-black text-white/20 uppercase mb-1 tracking-widest">Reserva Neta GLDC</p>
                       <p className="text-2xl font-black gold-text">{orderDetails.netTokens.toFixed(6)} g</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[8px] font-black text-white/20 uppercase mb-1">Valor en USDT</p>
+                      <p className="text-[8px] font-black text-white/20 uppercase mb-1 tracking-widest">Monto Liquidación</p>
                       <p className="text-2xl font-black text-white">${orderDetails.finalUSDT.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                     </div>
                   </div>
                 </div>
                 
-                {/* Resumen de Transferencia Obligatoria */}
-                <div className="bg-black/40 p-5 rounded-2xl border-l-4 border-yellow-500">
-                  <p className="text-[9px] font-black text-yellow-500 uppercase mb-2">Instrucción de Envío:</p>
+                <div className="bg-yellow-500 p-5 rounded-2xl shadow-[0_0_20px_rgba(234,179,8,0.3)]">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-black font-black text-[8px] uppercase tracking-widest">Instrucción de Envío Obligatoria:</span>
+                    <span className="text-black/60 font-black text-[7px] uppercase tracking-widest">RED BSC ONLY</span>
+                  </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-white font-bold text-xs uppercase tracking-widest">Debes transferir:</span>
-                    <span className="text-white font-black text-lg">
+                    <span className="text-black font-bold text-xs uppercase tracking-widest">Enviar exactamente:</span>
+                    <span className="text-black font-black text-xl">
                       {orderType === 'BUY' ? `$${orderDetails.finalUSDT.toFixed(2)} USDT` : `${orderDetails.amount} GLDC`}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Dirección de Tesorería */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-4">
-                  <p className="text-[8px] font-black text-white/20 uppercase tracking-widest">Billetera Tesorería (BSC)</p>
-                  <span className="text-[7px] font-black text-yellow-500/60 uppercase">Protocolo Cryptocagua</span>
+                  <p className="text-[8px] font-black text-white/20 uppercase tracking-widest">Billetera Tesorería (BSC BEP-20)</p>
                 </div>
                 <div className="bg-black/60 p-4 rounded-2xl border border-white/10 flex items-center justify-between gap-3 group hover:border-yellow-500/30 transition-all cursor-pointer shadow-inner" onClick={() => copyToClipboard(TREASURY_WALLET)}>
                   <code className="text-[9px] sm:text-xs font-mono text-white/40 break-all flex-1 leading-tight">{TREASURY_WALLET}</code>
-                  <div className="shrink-0 p-2 bg-white/5 rounded-lg group-hover:bg-yellow-500 transition-all group-hover:text-black">
+                  <div className="shrink-0 p-2 bg-white/5 rounded-lg group-hover:bg-yellow-500 transition-all group-hover:text-black shadow-lg">
                     {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
                   </div>
                 </div>
               </div>
 
-              {/* Formulario de Verificación */}
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-[8px] font-black text-white/40 uppercase px-4"><Hash size={10}/> Hash de tu pago (TxID)</label>
+                  <label className="flex items-center gap-2 text-[8px] font-black text-white/40 uppercase px-4"><Hash size={10}/> Hash TxID (Binance Smart Chain)</label>
                   <input 
                     type="text" 
                     value={txId} 
                     onChange={(e) => setTxId(e.target.value)} 
-                    placeholder="Pega el hash de la transacción aquí..." 
+                    placeholder="Pega el Hash de la BSC aquí..." 
                     className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-6 text-xs sm:text-sm font-mono text-yellow-500 outline-none focus:border-yellow-500/40 transition-all"
                   />
                 </div>
 
                 <div className="space-y-3">
-                  <p className="flex items-center gap-2 text-[8px] font-black text-white/40 uppercase px-4"><User size={10}/> Billetera de Recepción</p>
+                  <p className="flex items-center gap-2 text-[8px] font-black text-white/40 uppercase px-4"><User size={10}/> Billetera de Recepción (BSC)</p>
                   <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-white/5">
                     <button onClick={() => setIsDifferentWallet(false)} className={`flex-1 py-3 rounded-xl text-[8px] font-black uppercase transition-all ${!isDifferentWallet ? 'bg-white/10 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}>Conectada</button>
-                    <button onClick={() => setIsDifferentWallet(true)} className={`flex-1 py-3 rounded-xl text-[8px] font-black uppercase transition-all ${isDifferentWallet ? 'bg-white/10 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}>Otra (Externa)</button>
+                    <button onClick={() => setIsDifferentWallet(true)} className={`flex-1 py-3 rounded-xl text-[8px] font-black uppercase transition-all ${isDifferentWallet ? 'bg-white/10 text-white shadow-lg' : 'text-white/20 hover:text-white/40'}`}>Otra (BSC)</button>
                   </div>
                   
                   {isDifferentWallet && (
@@ -469,7 +482,7 @@ ${orderType === 'BUY'
                         type="text" 
                         value={externalAddress} 
                         onChange={(e) => setExternalAddress(e.target.value)} 
-                        placeholder="0x... (Dirección destino final)" 
+                        placeholder="0x... (Debe ser red BSC)" 
                         className="w-full bg-black/40 border border-yellow-500/10 rounded-2xl py-4 px-6 text-xs sm:text-sm font-mono text-white outline-none focus:border-yellow-500/40 transition-all"
                       />
                     </div>
@@ -483,13 +496,12 @@ ${orderType === 'BUY'
                   disabled={!isFormValid}
                   className={`w-full py-6 rounded-[2rem] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] flex items-center justify-center gap-4 shadow-2xl transition-all ${isFormValid ? 'gold-gradient text-black hover:scale-[1.02] active:scale-[0.98]' : 'bg-white/5 text-white/10 cursor-not-allowed'}`}
                 >
-                  Enviar Notificación <Send size={20}/>
+                  Confirmar y Notificar BSC <Send size={20}/>
                 </button>
-                <div className="flex items-start gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
-                  <Shield size={16} className="text-yellow-500 shrink-0 mt-0.5" />
-                  <p className="text-[7px] text-left text-white/30 font-bold uppercase leading-relaxed tracking-wider">
-                    Su operación será validada contra el explorador de bloques de la BSC. La acreditación de fondos (USDT o GLDC) es manual y toma entre 1 a 24 horas hábiles.
-                  </p>
+                <div className="flex items-center justify-center gap-4 py-2 opacity-30 grayscale hover:grayscale-0 transition-all">
+                   <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-white">
+                      <Zap size={10} className="text-yellow-500" /> Powered by Binance Smart Chain
+                   </div>
                 </div>
               </div>
             </div>
